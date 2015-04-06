@@ -3,7 +3,8 @@ import utils
 
 def _gen_items(type, globs, input_dir, output_dir):
     for fglob in globs:
-        for fname in utils.glob(fglob, input_dir):
+        fnames = list(utils.glob(fglob, input_dir))
+        for fname in fnames:
             fname = os.path.relpath(os.path.join(input_dir, fname), output_dir)
             yield '    <{} Include="{}" />\n'.format(type, fname)
 
@@ -33,8 +34,11 @@ def gen(args, crate):
         items.extend(
             _gen_items('ClInclude', c.get('includes', []), c.input_dir, args.output_dir))
 
+        include_dirs = []
         refs = []
         for r in c['_link']:
+            for ir in r.get('include_roots', []):
+                include_dirs.append(os.path.relpath(os.path.join(r.input_dir, ir), args.output_dir))
             refs.append(vcxproj_ref.format(path=r['_msvc_name'], guid=r['msvc_guid']))
 
         if c['type'] in ('c-exe', 'cpp-exe'):
@@ -44,12 +48,18 @@ def gen(args, crate):
         else:
             raise RuntimeError('Unsupported crate type: {proj_type}'.format(proj_type=proj_type))
 
+        if include_dirs:
+            include_dirs = '{};%(AdditionalIncludeDirectories)'.format(';'.join(include_dirs))
+        else:
+            include_dirs = '%(AdditionalIncludeDirectories)'
+
         vcxproj = vcxproj_templ.format(
             name=c['name'],
             project_guid=c['msvc_guid'],
             refs=''.join(refs),
             items=''.join(items),
-            proj_type=proj_type
+            proj_type=proj_type,
+            include_dirs=include_dirs
             )
 
         with open(os.path.join(args.output_dir, c['_msvc_name']), 'w') as fout:
@@ -172,6 +182,7 @@ vcxproj_templ = '''\
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_SCL_SECURE_NO_WARNINGS;WIN32;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>{include_dirs}</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -187,6 +198,7 @@ vcxproj_templ = '''\
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>{include_dirs}</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

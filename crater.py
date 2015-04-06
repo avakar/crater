@@ -1,4 +1,4 @@
-import sys, argparse, os.path
+import sys, argparse, os.path, subprocess, platform
 import pytoml as toml
 import template_msvc12
 
@@ -31,22 +31,30 @@ class Crate:
     def __str__(self):
         return '{}#{}'.format(self.scope.crate_def, self.name)
 
+    def __repr__(self):
+        return 'Crate({})'.format(self)
+
 class Scope:
-    def __init__(self, cache, crate_def, cratefile):
+    def __init__(self, cache, crate_def, input_dir, crates):
         self.cache = cache
         self.crate_def = crate_def
-        self.input_dir = crate_def
-        self.crates = [Crate(c, self) for c in cratefile.get('crate', [])]
+        self.input_dir = input_dir
+        self.crates = [Crate(c, self) for c in crates]
         self.map = { crate.name: crate for crate in self.crates }
 
     def resolve_ref(self, name):
         if name in self.map:
-            return self.map[name]
+            resolved = self.cache.resolve_crate(self.map[name])
+            self.map[name] = resolved
+            return resolved
         return self.cache.resolve_ref(name)
 
 class CrateCache:
-    def __init__(self, ref_overrides):
+    def __init__(self, ref_overrides, output_dir):
         self.ref_overrides = ref_overrides
+        self.output_dir = output_dir
+        self.deps_dir = os.path.join(output_dir, 'deps')
+        self.externs = {}
         self.scopes = {}
 
     def _load_scope(self, crate_def):
@@ -57,9 +65,60 @@ class CrateCache:
             cratefile = toml.load(fin)
             input_dir = crate_def
 
-        scope = Scope(self, crate_def, cratefile)
+        def match_target(target):
+            return target == platform.system().lower()
+
+        crates = []
+        for crate in cratefile.get('crate', []):
+            parts = [tg_def for tg_name, tg_def in crate.get('target', {}).iteritems() if match_target(tg_name)]
+
+            for part in parts:
+                for k, v in part.iteritems():
+                    if k not in crate:
+                        crate[k] = v
+                        continue
+
+                    if isinstance(v, list):
+                        crate[k].extend(v)
+                    elif isinstance(v, dict):
+                        crate[k].update(v)
+                    else:
+                        crate[k] = v
+
+            crates.append(crate)
+
+        scope = Scope(self, crate_def, input_dir, crates)
         self.scopes[crate_def] = scope
         return scope
+
+    def resolve_crate(self, crate):
+        if crate.get('type', 'extern') != 'extern':
+            return crate
+        if 'git' not in crate:
+            return self.resolve_ref(crate['name'])
+        return self._resolve_git_extern(crate)
+
+    def _resolve_git_extern(self, ref_crate):
+        url = ref_crate['git']
+        if url in self.externs:
+            return self.externs[url]
+
+        try:
+            os.mkdir(self.deps_dir)
+        except OSError:
+            pass
+
+        ref_dir = os.path.join(self.deps_dir, ref_crate['name'])
+
+        if not os.path.isdir(ref_dir):
+            subprocess.check_call([
+                'git', 'clone', url,
+                '--branch', ref_crate.get('branch', 'master'),
+                ref_dir])
+
+        c = self.load_crate(ref_dir)
+        self.externs[url] = c
+        return c
 
     def load_crate(self, crate_def):
         toks = crate_def.split('#', 1)
@@ -99,7 +158,7 @@ def _main():
         ref, crate_def = ro.split('=', 1)
         ref_overrides[ref] = crate_def
 
-    crate_cache = CrateCache(ref_overrides)
+    crate_cache = CrateCache(ref_overrides, args.output_dir)
     c = crate_cache.load_crate(args.cratedef)
 
     return template(args, c)
