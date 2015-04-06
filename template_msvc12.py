@@ -53,13 +53,20 @@ def gen(args, crate):
         else:
             include_dirs = '%(AdditionalIncludeDirectories)'
 
+        link_libs = ';'.join(c.get('link_libs', []))
+        if link_libs:
+            link_libs += ';%(AdditionalDependencies)'
+        else:
+            link_libs = '%(AdditionalDependencies)'
+
         vcxproj = vcxproj_templ.format(
             name=c['name'],
             project_guid=c['msvc_guid'],
             refs=''.join(refs),
             items=''.join(items),
             proj_type=proj_type,
-            include_dirs=include_dirs
+            include_dirs=include_dirs,
+            link_libs=link_libs
             )
 
         with open(os.path.join(args.output_dir, c['_msvc_name']), 'w') as fout:
@@ -187,7 +194,11 @@ vcxproj_templ = '''\
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>{link_libs}</AdditionalDependencies>
     </Link>
+    <Lib>
+      <AdditionalDependencies>{link_libs}</AdditionalDependencies>
+    </Lib>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -205,7 +216,11 @@ vcxproj_templ = '''\
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>{link_libs}</AdditionalDependencies>
     </Link>
+    <Lib>
+      <AdditionalDependencies>{link_libs}</AdditionalDependencies>
+    </Lib>
   </ItemDefinitionGroup>
   <ItemGroup>
 {items}  </ItemGroup>
