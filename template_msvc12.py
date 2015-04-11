@@ -8,8 +8,28 @@ def _gen_items(type, globs, input_dir, output_dir):
             fname = os.path.relpath(os.path.join(input_dir, fname), output_dir)
             yield '    <{} Include="{}" />\n'.format(type, fname)
 
-def _gen_guid():
-    return '{{{}}}'.format(str(uuid.uuid4()).upper())
+def _gen_filter_items(type, globs, input_dir, output_dir, all_filters):
+    for fglob in globs:
+        fnames = list(utils.glob(fglob, input_dir))
+        for fname in fnames:
+            filter_name = os.path.relpath(os.path.split(fname)[0], input_dir)
+            fname = os.path.relpath(os.path.join(input_dir, fname), output_dir)
+            if filter_name and filter_name != '.':
+                all_filters.add(filter_name)
+                yield '''\
+    <{type} Include="{fname}">
+      <Filter>{filter}</Filter>
+    </{type}>
+'''.format(type=type, fname=fname, filter=filter_name)
+            else:
+                yield '    <{} Include="{}" />\n'.format(type, fname)
+
+uuid_ns = uuid.UUID('{BD60931F-F85F-46A6-BFE9-FCCC48D05554}')
+def _gen_guid(seed=None):
+    if seed is None:
+        return '{{{}}}'.format(str(uuid.uuid4()).upper())
+
+    return '{{{}}}'.format(str(uuid.uuid5(uuid_ns, bytes(seed))).upper())
 
 def gen(args, crate):
     q = [crate]
@@ -24,7 +44,7 @@ def gen(args, crate):
 
     for c in crates:
         if 'msvc_guid' not in c:
-            c['msvc_guid'] = _gen_guid()
+            c['msvc_guid'] = _gen_guid(c['name'])
         c['_msvc_name'] = c['name'] + '.vcxproj'
 
     for c in crates:
@@ -33,6 +53,13 @@ def gen(args, crate):
             _gen_items('ClCompile', c.get('sources', []), c.input_dir, args.output_dir))
         items.extend(
             _gen_items('ClInclude', c.get('includes', []), c.input_dir, args.output_dir))
+
+        all_filters = set()
+        filter_items = []
+        filter_items.extend(
+            _gen_filter_items('ClCompile', c.get('sources', []), c.input_dir, args.output_dir, all_filters))
+        filter_items.extend(
+            _gen_filter_items('ClInclude', c.get('includes', []), c.input_dir, args.output_dir, all_filters))
 
         include_dirs = []
         refs = []
@@ -71,6 +98,20 @@ def gen(args, crate):
 
         with open(os.path.join(args.output_dir, c['_msvc_name']), 'w') as fout:
             fout.write(vcxproj)
+
+        filters = []
+        for filter in sorted(all_filters):
+            filters.append('''\
+    <Filter Include="{name}">
+      <UniqueIdentifier>{guid}</UniqueIdentifier>
+    </Filter>
+'''.format(name=filter, guid=_gen_guid(filter)))
+
+        with open(os.path.join(args.output_dir, c['_msvc_name'] + '.filters'), 'w') as fout:
+            fout.write(filters_templ.format(
+                items=''.join(filter_items),
+                filters=''.join(filters)
+            ))
 
     sln_name = crate.name
     sln_guid = _gen_guid()
@@ -229,4 +270,13 @@ vcxproj_templ = '''\
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
+</Project>'''
+
+filters_templ = '''\
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+{items}  </ItemGroup>
+  <ItemGroup>
+{filters}  </ItemGroup>
 </Project>'''
