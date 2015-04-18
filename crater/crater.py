@@ -150,7 +150,7 @@ _default_templates = {
     'Windows': 'msvc12',
     }
 
-def _main():
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--template', '-t')
     parser.add_argument('--output-dir', '-C', default='.')
@@ -178,4 +178,4 @@ def _main():
     return template(args, c)
 
 if __name__ == '__main__':
-    sys.exit(_main())
+    sys.exit(main())
