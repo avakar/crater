@@ -66,7 +66,7 @@ define compile_one
 $1_deps += obj/$1/$(notdir $2).d
 obj/$1/$(notdir $2).d: $2 | obj/$1
 	echo "DEP     $$<"
-	$$(CXX) -MM $$(CXXFLAGS) $($1_flags) -std=c++11 $$< -MT "obj/$1/$(notdir $2).o obj/$1/$(notdir $2).d" > $$@
+	$$(CXX) -MM $$(CXXFLAGS) $($1_flags) -std=c++11 $$< -MT "obj/$1/$(notdir $2).o obj/$1/$(notdir $2).d" -MF "$$@"
 
 $1_objs += obj/$1/$(notdir $2).o
 obj/$1/$(notdir $2).o: $2 | obj/$1
