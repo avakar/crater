@@ -1,9 +1,11 @@
 import sys, argparse, os.path, subprocess, platform
 import pytoml as toml
 import template_msvc12
+import template_makefile
 
 templates = {
     'msvc12': template_msvc12.gen,
+    'makefile': template_makefile.gen,
     }
 
 class Crate:
@@ -61,9 +63,13 @@ class CrateCache:
         if crate_def in self.scopes:
             return self.scopes[crate_def]
 
-        with open(os.path.join(crate_def, 'Cratefile'), 'r') as fin:
+        if os.path.isdir(crate_def):
+            crate_def = os.path.join(crate_def, 'Cratefile')
+
+        crate_fname = crate_def
+        with open(crate_fname, 'r') as fin:
             cratefile = toml.load(fin)
-            input_dir = crate_def
+            input_dir = os.path.split(crate_def)[0]
 
         def match_target(target):
             return target == platform.system().lower()
@@ -88,6 +94,7 @@ class CrateCache:
             crates.append(crate)
 
         scope = Scope(self, crate_def, input_dir, crates)
+        scope.fname = crate_fname
         self.scopes[crate_def] = scope
         return scope
 
@@ -139,13 +146,20 @@ class CrateCache:
     def resolve_ref(self, name):
         return self.load_crate(self.ref_overrides[name])
 
+_default_templates = {
+    'Windows': 'msvc12',
+    }
+
 def _main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--template', '-t', default='msvc12')
+    parser.add_argument('--template', '-t')
     parser.add_argument('--output-dir', '-C', default='.')
     parser.add_argument('--ref', '-r', action='append', default=[])
     parser.add_argument('cratedef', nargs='?', default='.')
     args = parser.parse_args()
+
+    if args.template is None:
+        args.template = _default_templates.get(platform.system(), 'makefile')
 
     if args.template not in templates:
         print>>sys.stderr, 'Unknown template: {templ}'.format(templ=args.template)
