@@ -1,4 +1,4 @@
-import sys, argparse, os.path, subprocess, platform
+import sys, argparse, os.path, subprocess, platform, errno
 import pytoml as toml
 import template_msvc12
 import template_makefile
@@ -7,6 +7,18 @@ templates = {
     'msvc12': template_msvc12.gen,
     'makefile': template_makefile.gen,
     }
+
+class CraterError(Exception):
+    e_no_cratefile = 1
+
+    msgs = {
+        e_no_cratefile: 'no Cratefile found',
+        }
+
+    def __init__(self, err):
+        msg = CraterError.msgs.get(err, 'unknown error')
+        super(CraterError, self).__init__(msg)
+        self.err = err
 
 class Crate:
     def __init__(self, src, scope):
@@ -67,9 +79,15 @@ class CrateCache:
             crate_def = os.path.join(crate_def, 'Cratefile')
 
         crate_fname = crate_def
-        with open(crate_fname, 'r') as fin:
-            cratefile = toml.load(fin)
-            input_dir = os.path.split(crate_def)[0]
+
+        try:
+            with open(crate_fname, 'r') as fin:
+                cratefile = toml.load(fin)
+                input_dir = os.path.split(crate_def)[0]
+        except IOError, e:
+            if e.errno == errno.ENOENT:
+                raise CraterError(CraterError.e_no_cratefile)
+            raise
 
         def match_target(target):
             return target == platform.system().lower()
@@ -173,7 +191,12 @@ def main():
         ref_overrides[ref] = crate_def
 
     crate_cache = CrateCache(ref_overrides, args.output_dir)
-    c = crate_cache.load_crate(args.cratedef)
+
+    try:
+        c = crate_cache.load_crate(args.cratedef)
+    except CraterError, e:
+        print>>sys.stderr, 'error: {}'.format(e.message)
+        return 3
 
     return template(args, c)
 
