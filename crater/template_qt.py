@@ -65,6 +65,7 @@ def gen(args, crate):
                 headers=' '.join(headers),
                 include_paths=' '.join(include_paths),
                 libs=' '.join(libs),
+                cratefile=os.path.relpath(c.scope.fname, args.output_dir),
                 ))
 
     with open(os.path.join(args.output_dir, 'index.pro'), 'wt') as fout:
@@ -96,6 +97,7 @@ HEADERS = {headers}
 INCLUDEPATH = {include_paths}
 DESTDIR = bin
 OBJECTS_DIR = obj/{name}
+OTHER_FILES = {cratefile}
 '''
 
 app_templ = '''\
@@ -109,4 +111,5 @@ INCLUDEPATH = {include_paths}
 LIBS = -Lbin {libs}
 DESTDIR = bin
 OBJECTS_DIR = obj/{name}
+OTHER_FILES = {cratefile}
 '''
