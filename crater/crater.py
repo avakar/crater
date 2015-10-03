@@ -3,11 +3,13 @@
 import sys, argparse, os.path, subprocess, platform, errno
 import pytoml as toml
 import template_msvc12
+import template_msvc14
 import template_makefile
 import template_qt
 
 templates = {
     'msvc12': template_msvc12.gen,
+    'msvc14': template_msvc14.gen,
     'makefile': template_makefile.gen,
     'qt': template_qt.gen,
     }
@@ -169,7 +171,7 @@ class CrateCache:
         return self.load_crate(self.ref_overrides[name])
 
 _default_templates = {
-    'Windows': 'msvc12',
+    'Windows': 'msvc14',
     }
 
 def main():
