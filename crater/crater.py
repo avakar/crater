@@ -13,7 +13,11 @@ class GitLock:
 
     def checkout(self, target_dir):
         print 'checkout {} to {}'.format(self.commit, target_dir)
-        subprocess.check_call(['git', 'clone', self.repo, target_dir, '--no-checkout'])
+
+        if os.path.isdir(os.path.join(target_dir, '.git')):
+            subprocess.check_call(['git', 'fetch', 'origin'])
+        else:
+            subprocess.check_call(['git', 'clone', self.repo, target_dir, '--no-checkout'])
         subprocess.check_call(['git', '-c', 'advice.detachedHead=false', 'checkout', self.commit], cwd=target_dir)
 
 class GitKey:
