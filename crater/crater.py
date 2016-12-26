@@ -1,210 +1,112 @@
 #!/usr/bin/env python
 
-import sys, argparse, os.path, subprocess, platform, errno
-import pytoml as toml
-import template_msvc12
-import template_msvc14
-import template_makefile
-import template_qt
+import argparse
+import os, errno
+import subprocess
+import cson
+import xml.etree.ElementTree as ET
 
-templates = {
-    'msvc12': template_msvc12.gen,
-    'msvc14': template_msvc14.gen,
-    'makefile': template_makefile.gen,
-    'qt': template_qt.gen,
-    }
+class GitLock:
+    def __init__(self, repo, commit):
+        self.repo = repo
+        self.commit = commit
 
-class CraterError(Exception):
-    e_no_cratefile = 1
+    def checkout(self, target_dir):
+        print 'checkout {} to {}'.format(self.commit, target_dir)
+        subprocess.check_call(['git', 'clone', self.repo, target_dir, '--no-checkout'])
+        subprocess.check_call(['git', '-c', 'advice.detachedHead=false', 'checkout', self.commit], cwd=target_dir)
 
-    msgs = {
-        e_no_cratefile: 'no Cratefile found',
-        }
+class GitKey:
+    def __init__(self, repo):
+        self.repo = repo
 
-    def __init__(self, err):
-        msg = CraterError.msgs.get(err, 'unknown error')
-        super(CraterError, self).__init__(msg)
-        self.err = err
+    def make_lock(self, spec):
+        return GitLock(self.repo, spec['commit'])
 
-class Crate:
-    def __init__(self, src, scope):
-        self.src = src
-        self.scope = scope
-        self.name = self.src['name']
-        self.input_dir = scope.input_dir
+    def __hash__(self):
+        return hash(self.repo)
 
-    def resolve_ref(self, name):
-        return self.scope.resolve_ref(name)
+    def __eq__(self, o):
+        return o.__class__ == GitKey and self.repo == o.repo
 
-    def get(self, key, default=None):
-        return self.src.get(key, default)
+def _make_key(spec):
+    if spec['type'] != 'git':
+        raise RuntimeError('unknown dependency type')
+    return GitKey(spec['repo'])
 
-    def __contains__(self, key):
-        return key in self.src
+def _gen_msbuild(dirmap, prefix):
+    templ = '''\
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+{deps}  </PropertyGroup>
+</Project>'''
 
-    def __setitem__(self, key, value):
-        self.src[key] = value
+    r = []
+    for name, target_dir in dirmap.items():
+        r.append('    <{prefix}{name}>{dir}</{prefix}{name}>\n'.format(prefix=prefix, name=name, dir=target_dir))
+    return templ.format(deps=''.join(r))
 
-    def __getitem__(self, key):
-        return self.src[key]
-
-    def __str__(self):
-        return '{}#{}'.format(self.scope.crate_def, self.name)
-
-    def __repr__(self):
-        return 'Crate({})'.format(self)
-
-class Scope:
-    def __init__(self, cache, crate_def, input_dir, crates):
-        self.cache = cache
-        self.crate_def = crate_def
-        self.input_dir = input_dir
-        self.crates = [Crate(c, self) for c in crates]
-        self.map = { crate.name: crate for crate in self.crates }
-
-    def resolve_ref(self, name):
-        if name in self.map:
-            resolved = self.cache.resolve_crate(self.map[name])
-            self.map[name] = resolved
-            return resolved
-        return self.cache.resolve_ref(name)
-
-class CrateCache:
-    def __init__(self, ref_overrides, output_dir):
-        self.ref_overrides = ref_overrides
-        self.output_dir = output_dir
-        self.deps_dir = os.path.join(output_dir, 'deps')
-        self.externs = {}
-        self.scopes = {}
-
-    def _load_scope(self, crate_def):
-        if crate_def in self.scopes:
-            return self.scopes[crate_def]
-
-        if os.path.isdir(crate_def):
-            crate_def = os.path.join(crate_def, 'Cratefile')
-
-        crate_fname = crate_def
-
-        try:
-            with open(crate_fname, 'r') as fin:
-                cratefile = toml.load(fin)
-                input_dir = os.path.split(crate_def)[0]
-        except IOError, e:
-            if e.errno == errno.ENOENT:
-                raise CraterError(CraterError.e_no_cratefile)
-            raise
-
-        def match_target(target):
-            return target == platform.system().lower()
-
-        crates = []
-        for crate in cratefile.get('crate', []):
-            parts = [tg_def for tg_name, tg_def in crate.get('target', {}).iteritems() if match_target(tg_name)]
-
-            for part in parts:
-                for k, v in part.iteritems():
-                    if k not in crate:
-                        crate[k] = v
-                        continue
-
-                    if isinstance(v, list):
-                        crate[k].extend(v)
-                    elif isinstance(v, dict):
-                        crate[k].update(v)
-                    else:
-                        crate[k] = v
-
-            crates.append(crate)
-
-        scope = Scope(self, crate_def, input_dir, crates)
-        scope.fname = crate_fname
-        self.scopes[crate_def] = scope
-        return scope
-
-    def resolve_crate(self, crate):
-        if crate.get('type', 'extern') != 'extern':
-            return crate
-        if 'git' not in crate:
-            return self.resolve_ref(crate['name'])
-        return self._resolve_git_extern(crate)
-
-    def _resolve_git_extern(self, ref_crate):
-        url = ref_crate['git']
-        if url in self.externs:
-            return self.externs[url]
-
-        try:
-            os.mkdir(self.deps_dir)
-        except OSError:
-            pass
-
-        ref_dir = os.path.join(self.deps_dir, ref_crate['name'])
-
-        if not os.path.isdir(ref_dir):
-            subprocess.check_call([
-                'git', 'clone', url,
-                '--branch', ref_crate.get('branch', 'master'),
-                ref_dir])
-
-        c = self.load_crate(ref_dir)
-        self.externs[url] = c
-        return c
-
-    def load_crate(self, crate_def):
-        toks = crate_def.split('#', 1)
-        if len(toks) == 2:
-            crate_def, crate_name = toks
-        else:
-            crate_def = toks[0]
-            crate_name = None
-
-        crate_def = os.path.normcase(os.path.abspath(crate_def))
-        scope = self._load_scope(crate_def)
-
-        if crate_name is None:
-            return scope.crates[0]
-
-        return scope.map[crate_name]
-
-    def resolve_ref(self, name):
-        return self.load_crate(self.ref_overrides[name])
-
-_default_templates = {
-    'Windows': 'msvc14',
-    }
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--template', '-t')
-    parser.add_argument('--output-dir', '-C', default='.')
-    parser.add_argument('--ref', '-r', action='append', default=[])
-    parser.add_argument('cratedef', nargs='?', default='.')
-    args = parser.parse_args()
-
-    if args.template is None:
-        args.template = _default_templates.get(platform.system(), 'makefile')
-
-    if args.template not in templates:
-        print>>sys.stderr, 'Unknown template: {templ}'.format(templ=args.template)
-        return 2
-
-    template = templates[args.template]
-
-    ref_overrides = {}
-    for ro in args.ref:
-        ref, crate_def = ro.split('=', 1)
-        ref_overrides[ref] = crate_def
-
-    crate_cache = CrateCache(ref_overrides, args.output_dir)
+def _checkout(dir, deps_dir):
+    try:
+        with open(os.path.join(dir, 'deps.lock'), 'rb') as fin:
+            lock = cson.load(fin)
+    except IOError:
+        return 0
 
     try:
-        c = crate_cache.load_crate(args.cratedef)
-    except CraterError, e:
-        print>>sys.stderr, 'error: {}'.format(e.message)
-        return 3
+        os.makedirs(deps_dir)
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            raise
 
-    return template(args, c)
+    entries = {}
+    for entry in lock:
+        key = _make_key(entry)
+        if key in entries:
+            raise RuntimeError('duplicate entry in deps.lock')
+        entries[key] = GitLock(entry['repo'], entry['commit'])
+
+    for top, dirs, files in os.walk(dir):
+        if 'DEPS' in files:
+            with open(os.path.join(top, 'DEPS'), 'rb') as fin:
+                specs = cson.load(fin)
+
+            packages = specs['packages']
+
+            mapping = {}
+            for pack in packages:
+                dep = packages[pack]
+                key = _make_key(dep)
+                if key not in entries:
+                    raise RuntimeError('unlocked dependency')
+                lock = entries[key]
+
+                target_dir = os.path.join(deps_dir, pack)
+                mapping[pack] = target_dir
+                lock.checkout(target_dir)
+
+            gen = specs.get('gen', {}).get('msbuild')
+            if gen is not None:
+                prefix = gen.get('prop_prefix', 'dep_')
+                file = gen.get('file', 'deps.props')
+                content = _gen_msbuild(mapping, prefix)
+                with open(file, 'wb') as fout:
+                    fout.write(content)
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--dir', default='.')
+    ap.add_argument('--deps-dir', default='_deps')
+    sp = ap.add_subparsers()
+    p = sp.add_parser('checkout')
+    p.set_defaults(fn=_checkout)
+    args = ap.parse_args()
+
+    fn = args.fn
+    del args.fn
+
+    return fn(**vars(args))
 
 if __name__ == '__main__':
     sys.exit(main())

@@ -5,16 +5,16 @@ from setuptools import setup
 
 setup(
     name='crater',
-    version='0.1.4',
+    version='0.2',
 
     description='A dependency management system',
     author='Martin Vejnár',
-    author_email='avakar@ratatanek.cz',
+    author_email='vejnar.martin@gmail.com',
     url='https://github.com/avakar/crater',
     license='MIT',
 
     packages=['crater'],
-    install_requires=['pytoml'],
+    install_requires=['cson'],
     entry_points = {
         'console_scripts': [
             'crater = crater.crater:main',
