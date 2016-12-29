@@ -28,3 +28,17 @@ Crater is written in python, so you'll need that.
 You'll also need pip, the python package manager.
 
     $ pip install crater
+
+## Getting started
+
+To pull dependencies for whatever project you want to work on,
+navigate to its root directory.
+There should be a file called DEPS and deps.lock.
+Then run the following command.
+
+    $ crater checkout
+
+All your dependecies will be downloaded into the `_deps` directory
+and you should be good to go.
+
+If you want to learn more, read the docs (after they're written).
