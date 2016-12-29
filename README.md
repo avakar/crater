@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/avakar/crater.svg?branch=master)](https://travis-ci.org/avakar/crater)
+
 # Crater
 
 A really really simple package dependency manager.
