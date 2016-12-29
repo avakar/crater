@@ -16,19 +16,26 @@ class GitLock:
         self.commit = commit
 
     def checkout(self, target_dir):
-        print 'checkout {} to {}'.format(self.commit, target_dir)
-
         if os.path.isdir(os.path.join(target_dir, '.git')):
             with open(os.devnull, 'w') as devnull:
                 r = subprocess.call(['git', 'rev-parse', '--verify', '--quiet', self.commit], stdout=devnull, cwd=target_dir)
             if r != 0:
                 subprocess.check_call(['git', 'fetch', 'origin'], cwd=target_dir)
+
+            commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=target_dir).strip()
+            if commit == self.commit:
+                return
         else:
             subprocess.check_call(['git', 'clone', self.repo, target_dir, '--no-checkout'])
+
+        print 'checkout {} to {}'.format(self.commit, target_dir)
         subprocess.check_call(['git', '-c', 'advice.detachedHead=false', 'checkout', self.commit], cwd=target_dir)
 
     def update(self, target_dir):
-        self.commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=target_dir).strip()
+        commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=target_dir).strip()
+        if self.commit != commit:
+            print 'updating lock on {} to {}'.format(self.repo, commit)
+            self.commit = commit
 
     def to_json(self):
         return {
@@ -218,9 +225,10 @@ def _commit(dir, deps_dir):
             crate.update();
 
     lock_file = [crate.lock.to_json() for crate in root.crates.values() if crate.lock is not None]
-    lock_file.sort(key=lambda e: e['repo'])
-    with open(os.path.join(dir, 'deps.lock'), 'w') as fout:
-        cson.dump(lock_file, fout, indent=4, sort_keys=True)
+    if lock_file:
+        lock_file.sort(key=lambda e: e['repo'])
+        with open(os.path.join(dir, 'deps.lock'), 'w') as fout:
+            cson.dump(lock_file, fout, indent=4, sort_keys=True)
 
 def main():
     ap = argparse.ArgumentParser()
