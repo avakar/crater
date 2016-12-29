@@ -26,9 +26,16 @@ class GitLock:
             if commit == self.commit:
                 return
         else:
+            try:
+                os.makedirs(os.path.split(target_dir)[0])
+            except OSError as e:
+                if e.errno != errno.EEXIST:
+                    raise
+
             subprocess.check_call(['git', 'clone', self.repo, target_dir, '--no-checkout'])
 
         print 'checkout {} to {}'.format(self.commit, target_dir)
+        subprocess.check_call(['git', 'config', 'hooks.suppresscrater', 'true'], cwd=target_dir)
         subprocess.check_call(['git', '-c', 'advice.detachedHead=false', 'checkout', self.commit], cwd=target_dir)
 
     def update(self, target_dir):
@@ -116,7 +123,7 @@ class Crate:
         assert self.lock is not None
 
         if self.dir_name is None:
-            hint = self.lock.name_hint()
+            hint = self.key.name_hint()
             self.dir_name = self.root._alloc_name(hint)
         return os.path.join(self.root.root, self.root.deps_dir, self.dir_name)
 
@@ -178,12 +185,6 @@ class Root:
 def _checkout(dir, deps_dir):
     root = Root(dir, deps_dir)
 
-    try:
-        os.makedirs(os.path.join(dir, deps_dir))
-    except OSError as e:
-        if e.errno != errno.EEXIST:
-            raise
-
     q = set(['.'])
     while q:
         cur = q.pop()
@@ -214,8 +215,9 @@ def _checkout(dir, deps_dir):
                 fout.write(content)
 
     mj = [ (crate.key.to_json(), crate.dir_name) for crate in root.crates.values() if crate.dir_name is not None ]
-    with open(os.path.join(deps_dir, 'mapping.json'), 'w') as fout:
-        json.dump(mj, fout)
+    if mj:
+        with open(os.path.join(deps_dir, 'mapping.json'), 'w') as fout:
+            json.dump(mj, fout)
 
 def _commit(dir, deps_dir):
     root = Root(dir, deps_dir)
