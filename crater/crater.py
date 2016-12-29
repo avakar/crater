@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from __future__ import print_function
 import argparse
 import sys
 import os, errno
@@ -34,14 +35,27 @@ class GitLock:
 
             subprocess.check_call(['git', 'clone', self.repo, target_dir, '--no-checkout'])
 
-        print 'checkout {} to {}'.format(self.commit, target_dir)
+        print('checkout {} to {}'.format(self.commit, target_dir))
         subprocess.check_call(['git', 'config', 'hooks.suppresscrater', 'true'], cwd=target_dir)
         subprocess.check_call(['git', '-c', 'advice.detachedHead=false', 'checkout', self.commit], cwd=target_dir)
 
     def update(self, target_dir):
+        subprocess.check_call(['git', 'update-index', '-q', '--refresh'], cwd=target_dir)
+
+        # This is a workaround. For whatever reason, git calls are not reentrant.
+        for key in os.environ:
+            if key.startswith('GIT_'):
+                os.unsetenv(key)
+
+        r = subprocess.call(['git', 'diff-index', '--quiet', 'HEAD', '--'], cwd=target_dir)
+        if r != 0:
+            print(r)
+            print('error: there are changes in {}'.format(target_dir), file=sys.stderr)
+            sys.exit(1)
+
         commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=target_dir).strip()
         if self.commit != commit:
-            print 'updating lock on {} to {}'.format(self.repo, commit)
+            print('updating lock on {} to {}'.format(self.repo, commit))
             self.commit = commit
 
     def to_json(self):
