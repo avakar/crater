@@ -89,7 +89,7 @@ class GitKey:
             }
 
     def name_hint(self):
-        r = self.repo.rsplit('/', 1)[1]
+        r = self.repo.replace('\\', '/').rsplit('/', 1)[-1]
         if r.endswith('.git'):
             r = r[:-4]
         return r
