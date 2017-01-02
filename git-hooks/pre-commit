@@ -1,2 +1,5 @@
-#!/bin/sh
-crater commit
+#!/bin/bash
+suppress_crater=$(git config --bool hooks.suppresscrater)
+if [[ "$suppress_crater" != "true" ]]; then
+    crater commit
+fi
