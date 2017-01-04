@@ -3,7 +3,7 @@
 from __future__ import print_function
 import argparse
 import sys
-import os, errno
+import os, errno, shutil, stat
 import subprocess
 import string
 import random
@@ -299,10 +299,150 @@ def _upgrade(dir, deps_dir):
     root.save_lock()
     root.save_mapping()
 
+class DepCheckout:
+    def __init__(self, name, links):
+        self.name = dir
+        self.links = links
+
+class SelfCheckout(DepCheckout):
+    def __init__(self):
+        DepCheckout.__init__(self, '', [])
+
+class GitCheckout(DepCheckout):
+    def __init__(self, name, links, commit, url):
+        DepCheckout.__init__(self, name, links)
+        self.commit = commit
+        self.url = url
+
+class DepsFile:
+    def __init__(self, path):
+        try:
+            with open(os.path.join(path, 'DEPS'), 'r') as fin:
+                d = cson.load(fin)
+        except OSError as e:
+            if e.errno != errno.ENOENT:
+                raise
+            d = {}
+
+        self.deps = {}
+        for name, data in d.get('dependencies', {}).items():
+            self.deps[name] = data
+
+class LockFile:
+    def __init__(self, root):
+        self.root = root
+        self.deps = {}
+        self.had_file = False
+
+        try:
+            with open(os.path.join(root, '.deps.lock'), 'r') as fin:
+                d = json.load(fin)
+            self.had_file = True
+        except IOError as e:
+            if e.errno != errno.ENOENT:
+                raise
+            d = {}
+
+        self.add_dep(SelfCheckout())
+        for dir, dep in d.items():
+            if dep['type'] == 'git':
+                self.add_dep(GitCheckout(dir, dep['links'], dep['commit'], dep['url']))
+            else:
+                raise RuntimeError('unknown dependency type: {}'.format(dep['type']))
+
+    def add_dep(self, dep):
+        if dep.name in self.deps:
+            raise RuntimeError('there already is a dependency in {}'.format(dep.dir))
+        self.deps[dep.name] = dep
+
+    def status(self):
+        r = {}
+        def go(path, prefix):
+            df = DepsFile(os.path.join(path, 'DEPS'))
+            for name in df.keys():
+                dep = '{}{}'.format(prefix, name)
+                dep = self.deps.get(dep)
+                if dep is None:
+                    r[dep] = ''
+
+        go(self.root, '')
+        for dep in self.deps.values():
+            go(os.path.join(self.root, dep.dir), '{}:'.format(dep.dir))
+
+    def save(self):
+        if not self.had_file and not self.deps:
+            return
+
+        deps = {}
+        for dep in self.deps.values():
+            if isinstance(dep, GitCheckout):
+                deps[dep.dir] = { 'commit': dep.commit, 'url': dep.url }
+
+        with open(os.path.join(self.root, '.deps.lock'), 'w') as fout:
+            json.dump(deps, fout, indent=2, sort_keys=True)
+
+def _add_git_crate(root, url, target, branch):
+    if target is None:
+        target = url.replace('\\', '/').rsplit('/', 1)[-1]
+        if target.endswith('.git'):
+            target = target[:-4]
+
+    dir = os.path.relpath(target, root).replace('\\', '/')
+
+    lock = LockFile(root)
+    if dir in lock.deps:
+        raise RuntimeError('there already is a dependency in {}'.format(target))
+
+    cmd = ['git', 'clone', url, target]
+    if branch:
+        cmd.extend(('-b', branch))
+
+    r = subprocess.call(cmd)
+    if r != 0:
+        return r
+
+    try:
+        commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=target).strip()
+
+        lock.add_dep(GitCheckout(dir, commit, url))
+        lock.save()
+    except:
+        def readonly_handler(rm_func, path, exc_info):
+            if issubclass(exc_info[0], OSError) and exc_info[1].winerror == 5:
+                os.chmod(path, stat.S_IWRITE)
+                return rm_func(path)
+            raise exc_info[1]
+        shutil.rmtree(target, onerror=readonly_handler)
+        raise
+
+    _status(root)
+    return 0
+
+def find_root(dir):
+    # The root directory is the one containing the .deps.lock file.
+    # If not explicitly specified by --root, try to locate search for
+    # the .deps.lock file in the parents of the current directory and choose the 
+    # farthest one. If there is no such directory, use current directory as the root.
+
+    dir = os.path.abspath(dir)
+
+    parts = []
+    while True:
+        dir, component = os.path.split(dir)
+        if not component:
+            break
+        parts.append(component)
+
+    while parts:
+        if os.path.isfile(os.path.join(dir, '.deps.lock')):
+            return dir
+        dir = os.path.join(dir, parts.pop())
+
+    return dir
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--dir', default='.')
-    ap.add_argument('--deps-dir', default='_deps')
+    ap.add_argument('--root')
     sp = ap.add_subparsers()
     p = sp.add_parser('checkout')
     p.set_defaults(fn=_checkout)
@@ -310,10 +450,20 @@ def main():
     p.set_defaults(fn=_commit)
     p = sp.add_parser('upgrade')
     p.set_defaults(fn=_upgrade)
+
+
+    p = sp.add_parser('add-git')
+    p.add_argument('--branch', '-b')
+    p.add_argument('url')
+    p.add_argument('target', nargs='?')
+    p.set_defaults(fn=_add_git_crate)
     args = ap.parse_args()
 
     fn = args.fn
     del args.fn
+
+    if not args.root:
+        args.root = find_root('.')
 
     return fn(**vars(args))
 
