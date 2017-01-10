@@ -10,6 +10,10 @@ import random
 import cson
 import json
 import xml.etree.ElementTree as ET
+import six
+
+from .lockfile import parse_lockfile
+from .crates import GitCrate
 
 class GitKey:
     def __init__(self, spec):
@@ -299,87 +303,20 @@ def _upgrade(dir, deps_dir):
     root.save_lock()
     root.save_mapping()
 
-class DepCheckout:
-    def __init__(self, name, links):
-        self.name = dir
-        self.links = links
 
-class SelfCheckout(DepCheckout):
-    def __init__(self):
-        DepCheckout.__init__(self, '', [])
+def _status(root):
+    r = {}
 
-class GitCheckout(DepCheckout):
-    def __init__(self, name, links, commit, url):
-        DepCheckout.__init__(self, name, links)
-        self.commit = commit
-        self.url = url
-
-class DepsFile:
-    def __init__(self, path):
-        try:
-            with open(os.path.join(path, 'DEPS'), 'r') as fin:
-                d = cson.load(fin)
-        except OSError as e:
-            if e.errno != errno.ENOENT:
-                raise
-            d = {}
-
-        self.deps = {}
-        for name, data in d.get('dependencies', {}).items():
-            self.deps[name] = data
-
-class LockFile:
-    def __init__(self, root):
-        self.root = root
-        self.deps = {}
-        self.had_file = False
-
-        try:
-            with open(os.path.join(root, '.deps.lock'), 'r') as fin:
-                d = json.load(fin)
-            self.had_file = True
-        except IOError as e:
-            if e.errno != errno.ENOENT:
-                raise
-            d = {}
-
-        self.add_dep(SelfCheckout())
-        for dir, dep in d.items():
-            if dep['type'] == 'git':
-                self.add_dep(GitCheckout(dir, dep['links'], dep['commit'], dep['url']))
+    lock = parse_lockfile(root)
+    for crate in lock.crates():
+        for dep in crate.deps():
+            if dep.crate is None:
+                r[dep.full_name()] = '!'
             else:
-                raise RuntimeError('unknown dependency type: {}'.format(dep['type']))
+                r[dep.full_name()] = '?'
 
-    def add_dep(self, dep):
-        if dep.name in self.deps:
-            raise RuntimeError('there already is a dependency in {}'.format(dep.dir))
-        self.deps[dep.name] = dep
-
-    def status(self):
-        r = {}
-        def go(path, prefix):
-            df = DepsFile(os.path.join(path, 'DEPS'))
-            for name in df.keys():
-                dep = '{}{}'.format(prefix, name)
-                dep = self.deps.get(dep)
-                if dep is None:
-                    r[dep] = ''
-
-        go(self.root, '')
-        for dep in self.deps.values():
-            go(os.path.join(self.root, dep.dir), '{}:'.format(dep.dir))
-
-    def save(self):
-        if not self.had_file and not self.deps:
-            return
-
-        deps = {}
-        for dep in self.deps.values():
-            if isinstance(dep, GitCheckout):
-                deps[dep.dir] = { 'commit': dep.commit, 'url': dep.url }
-
-        with open(os.path.join(self.root, '.deps.lock'), 'w') as fout:
-            json.dump(deps, fout, indent=2, sort_keys=True)
+    for name, status in six.iteritems(r):
+        print('{} {}'.format(status, name))
 
 def _add_git_crate(root, url, target, branch):
     if target is None:
@@ -387,24 +324,24 @@ def _add_git_crate(root, url, target, branch):
         if target.endswith('.git'):
             target = target[:-4]
 
-    dir = os.path.relpath(target, root).replace('\\', '/')
+    crate_path = os.path.relpath(target, root).replace('\\', '/')
 
-    lock = LockFile(root)
-    if dir in lock.deps:
+    lock = parse_lockfile(root)
+    if lock.get(crate_path):
         raise RuntimeError('there already is a dependency in {}'.format(target))
 
     cmd = ['git', 'clone', url, target]
     if branch:
         cmd.extend(('-b', branch))
 
-    r = subprocess.call(cmd)
+    r = subprocess.call(cmd, cwd=root)
     if r != 0:
         return r
 
     try:
-        commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=target).strip()
+        commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=os.path.join(root, target)).strip()
 
-        lock.add_dep(GitCheckout(dir, commit, url))
+        lock.add(GitCrate(root, crate_path, [], commit, url))
         lock.save()
     except:
         def readonly_handler(rm_func, path, exc_info):
@@ -457,6 +394,10 @@ def main():
     p.add_argument('url')
     p.add_argument('target', nargs='?')
     p.set_defaults(fn=_add_git_crate)
+
+    p = sp.add_parser('status')
+    p.set_defaults(fn=_status)
+
     args = ap.parse_args()
 
     fn = args.fn

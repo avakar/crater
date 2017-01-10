@@ -14,7 +14,7 @@ setup(
     license='MIT',
 
     packages=['crater'],
-    install_requires=['cson'],
+    install_requires=['cson', 'six'],
     entry_points = {
         'console_scripts': [
             'crater = crater.crater:main',
