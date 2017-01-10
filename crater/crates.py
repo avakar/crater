@@ -28,6 +28,9 @@ class CrateBase:
         for name, data in six.iteritems(d.get('dependencies', {})):
             self._deps[name] = Dep(self.name, name, data)
 
+    def get_dep(self, dep):
+        return self._deps.get(dep)
+
     def deps(self):
         return six.itervalues(self._deps)
 

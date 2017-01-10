@@ -50,8 +50,15 @@ class _LockFile:
             raise RuntimeError('there already is a dependency in {}'.format(crate.name))
         self._crates[crate.name] = crate
 
-    def get(self, path):
+    def get_crate(self, path):
         return self._crates.get(path)
+
+    def get_dep(self, crate, dep):
+        crate = self.get_crate(crate)
+        if not crate:
+            return None
+
+        return crate.get_dep(dep)
 
     def status(self):
         r = {}

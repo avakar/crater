@@ -318,6 +318,37 @@ def _status(root):
     for name, status in six.iteritems(r):
         print('{} {}'.format(status, name))
 
+def _list_deps(root):
+    lock = parse_lockfile(root)
+
+    r = []
+    for crate in lock.crates():
+        for dep in crate.deps():
+            r.append((crate.name, dep.name))
+
+    r.sort()
+    for cname, dname in r:
+        print('{}:{}'.format(cname, dname))
+
+def _assign(root, dep, crate):
+    toks = dep.split(':', 1)
+    if len(toks) != 2:
+        toks = '', toks[0]
+    cname, dname = toks
+
+    lock = parse_lockfile(root)
+    dep = lock.get_dep(cname, dname)
+    if dep is None:
+        raise RuntimeError('not a valid dep: {}:{}'.format(cname, dname))
+
+    cr = lock.get_crate(crate)
+    if cr is None:
+        raise RuntimeError('not a crate: {}'.format(crate))
+
+    dep.crate = cr
+    dep.crate_name = cr.name
+    lock.save()
+
 def _add_git_crate(root, url, target, branch):
     if target is None:
         target = url.replace('\\', '/').rsplit('/', 1)[-1]
@@ -394,6 +425,14 @@ def main():
     p.add_argument('url')
     p.add_argument('target', nargs='?')
     p.set_defaults(fn=_add_git_crate)
+
+    p = sp.add_parser('list-deps')
+    p.set_defaults(fn=_list_deps)
+
+    p = sp.add_parser('assign')
+    p.add_argument('dep')
+    p.add_argument('crate')
+    p.set_defaults(fn=_assign)
 
     p = sp.add_parser('status')
     p.set_defaults(fn=_status)
