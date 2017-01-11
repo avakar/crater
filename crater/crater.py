@@ -166,11 +166,13 @@ def main():
     ap.add_argument('--root')
     sp = ap.add_subparsers()
 
-    p = sp.add_parser('checkout')
-    p.set_defaults(fn=_checkout)
+    for cmd in ('checkout', 'co'):
+        p = sp.add_parser(cmd)
+        p.set_defaults(fn=_checkout)
 
-    p = sp.add_parser('commit')
-    p.set_defaults(fn=_commit)
+    for cmd in ('commit', 'ci'):
+        p = sp.add_parser(cmd)
+        p.set_defaults(fn=_commit)
 
     p = sp.add_parser('add-git')
     p.add_argument('--branch', '-b')
