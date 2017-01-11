@@ -1,5 +1,6 @@
 import os, json, errno, six, cson
-from .crates import GitCrate, SelfCrate
+from .crates import SelfCrate
+from .gitcrate import GitCrate
 
 def is_valid_crate_name(name):
     parts = name.split('/')
@@ -59,6 +60,7 @@ def parse_lockfile(root):
             d = {}
 
         crate._dep_specs = d.get('dependencies', {})
+        crate._gen = d.get('gen', {})
 
     return _LockFile(root, crates)
 

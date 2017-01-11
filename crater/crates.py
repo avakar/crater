@@ -8,6 +8,7 @@ class CrateBase:
         self._root = root
         self.name = name
         self.path = os.path.join(root, name)
+        self._gen = {}
         self._deps = {}
         self._dep_specs = {}
 
@@ -41,28 +42,5 @@ class SelfCrate(CrateBase):
         self._save_deps(r)
         return r
 
-class GitCrate(CrateBase):
-    def __init__(self, root, name, commit, url):
-        CrateBase.__init__(self, root, name)
-        self.commit = commit
-        self.url = url
-
-    def status(self):
-        try:
-            commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=self.path).strip()
-        except subprocess.CalledProcessError as e:
-            return 'D'
-
-        if self.commit == commit:
-            return ' '
-        else:
-            return 'M'
-
-    def serialize(self):
-        r = {
-            'type': 'git',
-            'commit': self.commit,
-            'url': self.url,
-            }
-        self._save_deps(r)
-        return r
+    def checkout(self):
+        pass
