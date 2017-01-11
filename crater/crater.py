@@ -16,6 +16,7 @@ def _checkout(root):
 
     for crate in lock.crates():
         crate.checkout()
+        crate.reload_deps()
 
         mapping = { 'self': os.path.abspath(crate.path) }
         for dep, target in crate.deps():

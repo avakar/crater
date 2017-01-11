@@ -51,16 +51,7 @@ def parse_lockfile(root):
         crate._deps = deps
         del crate._raw_deps
 
-        try:
-            with open(os.path.join(crate.path, 'DEPS'), 'r') as fin:
-                d = cson.load(fin)
-        except IOError as e:
-            if e.errno != errno.ENOENT:
-                raise
-            d = {}
-
-        crate._dep_specs = d.get('dependencies', {})
-        crate._gen = d.get('gen', {})
+        crate.reload_deps()
 
     return _LockFile(root, crates)
 

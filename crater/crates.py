@@ -12,6 +12,18 @@ class CrateBase:
         self._deps = {}
         self._dep_specs = {}
 
+    def reload_deps(self):
+        try:
+            with open(os.path.join(self.path, 'DEPS'), 'r') as fin:
+                d = cson.load(fin)
+        except IOError as e:
+            if e.errno != errno.ENOENT:
+                raise
+            d = {}
+
+        self._dep_specs = d.get('dependencies', {})
+        self._gen = d.get('gen', {})
+
     def get_dep(self, dep):
         return self._deps.get(dep)
 
