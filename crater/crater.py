@@ -308,15 +308,25 @@ def _status(root):
     r = {}
 
     lock = parse_lockfile(root)
-    for crate in lock.crates():
-        for dep in crate.deps():
-            if dep.crate is None:
-                r[dep.full_name()] = '!'
-            else:
-                r[dep.full_name()] = '?'
 
-    for name, status in six.iteritems(r):
-        print('{} {}'.format(status, name))
+
+    for crate in lock.crates():
+        unassigned = set(name for name, spec in crate.dep_specs())
+
+        for dep_name, target in crate.deps():
+            try:
+                unassigned.remove(dep_name)
+            except:
+                pass
+            full_name = '{}:{}'.format(crate.name, dep_name)
+            r[full_name] = target.status()
+
+        for dep_name in unassigned:
+            full_name = '{}:{}'.format(crate.name, dep_name)
+            r[full_name] = 'U'
+
+    for name, status in sorted(r.items()):
+        print('{}       {}'.format(status, name))
 
 def _list_deps(root):
     lock = parse_lockfile(root)
@@ -330,23 +340,32 @@ def _list_deps(root):
     for cname, dname in r:
         print('{}:{}'.format(cname, dname))
 
-def _assign(root, dep, crate):
+def _assign(root, dep, crate, force):
+    lock = parse_lockfile(root)
+    target_crate = lock.locate_crate(crate)
+
     toks = dep.split(':', 1)
     if len(toks) != 2:
         toks = '', toks[0]
     cname, dname = toks
 
+    crate = lock.locate_crate(cname)
+
+    if dname not in crate._dep_specs:
+        if not force:
+            print('error: the dependency {} has no specification in the DEPS file'.format(dep), file=sys.stderr)
+            return 1
+        else:
+            print('warning: the dependency {} has no specification in the DEPS file'.format(dep), file=sys.stderr)
+
+    crate.set_dep(dname, target_crate)
+    lock.save()
+
+def _remove(root, target):
     lock = parse_lockfile(root)
-    dep = lock.get_dep(cname, dname)
-    if dep is None:
-        raise RuntimeError('not a valid dep: {}:{}'.format(cname, dname))
+    crate = lock.locate_crate(target)
 
-    cr = lock.get_crate(crate)
-    if cr is None:
-        raise RuntimeError('not a crate: {}'.format(crate))
-
-    dep.crate = cr
-    dep.crate_name = cr.name
+    lock.remove(crate)
     lock.save()
 
 def _add_git_crate(root, url, target, branch):
@@ -354,11 +373,12 @@ def _add_git_crate(root, url, target, branch):
         target = url.replace('\\', '/').rsplit('/', 1)[-1]
         if target.endswith('.git'):
             target = target[:-4]
+        target = os.path.join(root, '_deps', target)
 
     crate_path = os.path.relpath(target, root).replace('\\', '/')
 
     lock = parse_lockfile(root)
-    if lock.get(crate_path):
+    if lock.get_crate(crate_path):
         raise RuntimeError('there already is a dependency in {}'.format(target))
 
     cmd = ['git', 'clone', url, target]
@@ -371,9 +391,6 @@ def _add_git_crate(root, url, target, branch):
 
     try:
         commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=os.path.join(root, target)).strip()
-
-        lock.add(GitCrate(root, crate_path, [], commit, url))
-        lock.save()
     except:
         def readonly_handler(rm_func, path, exc_info):
             if issubclass(exc_info[0], OSError) and exc_info[1].winerror == 5:
@@ -382,6 +399,16 @@ def _add_git_crate(root, url, target, branch):
             raise exc_info[1]
         shutil.rmtree(target, onerror=readonly_handler)
         raise
+
+    new_crate = GitCrate(root, crate_path, commit, url)
+
+    dep_name = os.path.split(target)[1]
+    for crate in lock.crates():
+        if dep_name not in crate._deps and dep_name in crate._dep_specs:
+            crate.set_dep(dep_name, new_crate)
+
+    lock.add(new_crate)
+    lock.save()
 
     _status(root)
     return 0
@@ -419,17 +446,22 @@ def main():
     p = sp.add_parser('upgrade')
     p.set_defaults(fn=_upgrade)
 
-
     p = sp.add_parser('add-git')
     p.add_argument('--branch', '-b')
     p.add_argument('url')
     p.add_argument('target', nargs='?')
     p.set_defaults(fn=_add_git_crate)
 
+    for cmd in ('rm', 'remove'):
+        p = sp.add_parser(cmd)
+        p.add_argument('target', default='.')
+        p.set_defaults(fn=_remove)
+
     p = sp.add_parser('list-deps')
     p.set_defaults(fn=_list_deps)
 
     p = sp.add_parser('assign')
+    p.add_argument('--force', '-f', action='store_true')
     p.add_argument('dep')
     p.add_argument('crate')
     p.set_defaults(fn=_assign)
