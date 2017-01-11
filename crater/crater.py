@@ -17,7 +17,7 @@ def _checkout(root):
     for crate in lock.crates():
         crate.checkout()
 
-        mapping = {}
+        mapping = { 'self': os.path.abspath(crate.path) }
         for dep, target in crate.deps():
             mapping[dep] = os.path.abspath(target.path)
 
