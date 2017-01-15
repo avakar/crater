@@ -18,7 +18,11 @@ class GitCrate(CrateBase):
         else:
             return 'M'
 
-    def serialize(self):
+    @classmethod
+    def load(cls, root, name, spec):
+        return cls(root, name, spec['commit'], spec['url'])
+
+    def save(self):
         r = {
             'type': 'git',
             'commit': self.commit,

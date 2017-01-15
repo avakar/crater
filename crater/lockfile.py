@@ -1,6 +1,12 @@
 import os, json, errno, six, cson
 from .crates import SelfCrate
 from .gitcrate import GitCrate
+from .tarcrate import TarCrate
+
+_crate_types = {
+    'git': GitCrate,
+    'tar': TarCrate,
+    }
 
 def is_valid_crate_name(name):
     parts = name.split('/')
@@ -31,10 +37,11 @@ def parse_lockfile(root):
                 return SelfCrate(root)
             else:
                 raise RuntimeError('expected "type" attribute for crate {}'.format(path))
-        elif type == 'git':
-            return GitCrate(root, name, spec['commit'], spec['url'])
         else:
-            raise RuntimeError('unknown dependency type: {}'.format(type))
+            cls = _crate_types.get(type)
+            if cls is None:
+                raise RuntimeError('unknown dependency type: {}'.format(type))
+            return cls.load(root, name, spec)
 
     crates = {}
     for name, spec in six.iteritems(d):
@@ -59,6 +66,9 @@ class _LockFile:
     def __init__(self, root, crates):
         self._root = root
         self._crates = crates
+
+    def root(self):
+        return self._root
 
     def crates(self):
         return six.itervalues(self._crates)
@@ -117,7 +127,7 @@ class _LockFile:
             go(os.path.join(self.root, dep.dir), '{}:'.format(dep.dir))
 
     def save(self):
-        d = { crate.name: crate.serialize() for crate in six.itervalues(self._crates) }
+        d = { crate.name: crate.save() for crate in six.itervalues(self._crates) }
 
         assert '' in d
 
