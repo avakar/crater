@@ -55,8 +55,6 @@ class Git:
 
     def init(self):
         subprocess.check_call(['git', 'init', '-q'], cwd=self.path)
-        subprocess.check_call(['git', 'config', 'user.name', 'Tester'], cwd=self.path)
-        subprocess.check_call(['git', 'config', 'user.email', 'test@example.com'], cwd=self.path)
 
     def add(self, name):
         open(os.path.join(self.path, name), 'w').close()
@@ -64,6 +62,8 @@ class Git:
 
     def commit(self):
         self._commit_counter += 1
+        subprocess.check_call(['git', 'config', 'user.name', 'Tester'], cwd=self.path)
+        subprocess.check_call(['git', 'config', 'user.email', 'test@example.com'], cwd=self.path)
         subprocess.check_call(['git', 'commit', '-q', '-m', 'commit {}'.format(self._commit_counter)], cwd=self.path)
         return self.current_commit()
 
