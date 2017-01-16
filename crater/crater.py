@@ -105,7 +105,7 @@ def _add_git_crate(lock, url, target, branch):
         return r
 
     try:
-        commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=os.path.join(lock.root(), target)).strip()
+        commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=os.path.join(lock.root(), target)).strip().decode('ascii')
     except:
         def readonly_handler(rm_func, path, exc_info):
             if issubclass(exc_info[0], OSError) and exc_info[1].winerror == 5:
