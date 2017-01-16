@@ -51,13 +51,13 @@ class Ctx:
 
 class TestCrater(unittest.TestCase):
     def setUp(self):
-        super().setUp()
+        super(TestCrater, self).setUp()
         self.ctx = Ctx()
         self.ctx.setUp()
 
     def tearDown(self):
         self.ctx.tearDown()
-        return super().tearDown()
+        return super(TestCrater, self).tearDown()
 
     def test_add_git_auto(self):
         repo = self.ctx.make_repo(name='test_repo')
