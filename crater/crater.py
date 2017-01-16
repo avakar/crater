@@ -164,7 +164,7 @@ def find_root(dir):
 
     return dir
 
-def main():
+def main(*argv):
     ap = argparse.ArgumentParser()
     ap.add_argument('--root')
     sp = ap.add_subparsers()
@@ -207,7 +207,7 @@ def main():
     p = sp.add_parser('status')
     p.set_defaults(fn=_status)
 
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     fn = args.fn
     del args.fn
@@ -220,4 +220,4 @@ def main():
     return fn(lock=lock, **vars(args))
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(main(*sys.argv))
