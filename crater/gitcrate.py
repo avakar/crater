@@ -35,9 +35,9 @@ class GitCrate(CrateBase):
         self._clean_env()
         if os.path.isdir(os.path.join(self.path, '.git')):
             with open(os.devnull, 'w') as devnull:
-                r = subprocess.call(['git', 'rev-parse', '--verify', '--quiet', self.commit], stdout=devnull, cwd=self.path)
+                r = subprocess.call(['git', 'rev-parse', '--verify', '--quiet', '{}^{{commit}}'.format(self.commit)], stdout=devnull, cwd=self.path)
             if r != 0:
-                subprocess.check_call(['git', 'fetch', 'origin'], cwd=target_dir)
+                subprocess.check_call(['git', 'fetch', 'origin'], cwd=self.path)
 
             commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=self.path).strip()
             if commit == self.commit:
