@@ -22,10 +22,12 @@ def _checkout(lock):
             mapping[dep] = os.path.abspath(target.path)
 
         gen(crate.path, mapping, crate._gen)
+    return 0
 
 def _commit(lock):
     for crate in lock.crates():
         crate.commit()
+    return 0
 
 def _status(lock):
     r = {}
@@ -47,6 +49,7 @@ def _status(lock):
 
     for name, status in sorted(r.items()):
         print('{}       {}'.format(status, name))
+    return 0
 
 def _list_deps(lock):
     r = []
@@ -57,6 +60,7 @@ def _list_deps(lock):
     r.sort()
     for cname, dname in r:
         print('{}:{}'.format(cname, dname))
+    return 0
 
 def _assign(lock, dep, crate, force):
     target_crate = lock.locate_crate(crate)
@@ -77,6 +81,7 @@ def _assign(lock, dep, crate, force):
 
     crate.set_dep(dname, target_crate)
     lock.save()
+    return 0
 
 def _remove(lock, target):
     crate = lock.locate_crate(target)
@@ -84,7 +89,7 @@ def _remove(lock, target):
     lock.remove(crate)
     lock.save()
 
-def _add_git_crate(lock, url, target, branch):
+def _add_git_crate(lock, url, target, branch, quiet):
     if target is None:
         target = url.replace('\\', '/').rsplit('/', 1)[-1]
         if target.endswith('.git'):
@@ -97,6 +102,8 @@ def _add_git_crate(lock, url, target, branch):
         raise RuntimeError('there already is a dependency in {}'.format(target))
 
     cmd = ['git', 'clone', url, target]
+    if quiet:
+        cmd.append('-q')
     if branch:
         cmd.extend(('-b', branch))
 
@@ -179,6 +186,7 @@ def main(*argv):
 
     p = sp.add_parser('add-git')
     p.add_argument('--branch', '-b')
+    p.add_argument('--quiet', '-q', action='store_true')
     p.add_argument('url')
     p.add_argument('target', nargs='?')
     p.set_defaults(fn=_add_git_crate)
