@@ -49,7 +49,7 @@ class SelfCrate(CrateBase):
     def __init__(self, root):
         CrateBase.__init__(self, root, '')
 
-    def serialize(self):
+    def save(self):
         r = {}
         self._save_deps(r)
         return r

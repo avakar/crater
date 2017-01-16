@@ -36,6 +36,9 @@ class Ctx:
 
         try:
             subprocess.check_call(['git', 'init'], cwd=r)
+            subprocess.check_call(['git', 'config', 'user.name', 'Tester'], cwd=r)
+            subprocess.check_call(['git', 'config', 'user.email', 'test@example.com'], cwd=r)
+
             open(os.path.join(r, file), 'w').close()
             subprocess.check_call(['git', 'add', file], cwd=r)
             subprocess.check_call(['git', 'commit', '-m', 'init'], cwd=r)
