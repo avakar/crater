@@ -54,7 +54,7 @@ class SelfCrate(CrateBase):
         self._save_deps(r)
         return r
 
-    def commit(self):
+    def update(self):
         pass
 
     def checkout(self):

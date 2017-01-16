@@ -55,7 +55,7 @@ class GitCrate(CrateBase):
         subprocess.check_call(['git', 'config', 'hooks.suppresscrater', 'true'], cwd=self.path)
         subprocess.check_call(['git', '-c', 'advice.detachedHead=false', 'checkout', self.commit], cwd=self.path)
 
-    def commit(self):
+    def update(self):
         self._clean_env()
         subprocess.check_call(['git', 'update-index', '-q', '--refresh'], cwd=self.path)
 
@@ -63,10 +63,7 @@ class GitCrate(CrateBase):
         if r != 0:
             raise RuntimeError('error: there are changes in {}'.format(self.path))
 
-        commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=self.path).strip()
-        if self.commit != commit:
-            print('updating lock on {} to {}'.format(self.repo, commit))
-
+        commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=self.path).strip().decode()
         self.commit = commit
 
     def _clean_env(self):

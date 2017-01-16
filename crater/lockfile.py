@@ -131,9 +131,10 @@ class _LockFile:
 
         assert '' in d
 
-        if len(d) == 1 and not d[''] and not os.path.isfile(self._path):
+        path = os.path.join(self._root, '.deps.lock')
+        if len(d) == 1 and not d[''] and not os.path.isfile(path):
             return
 
-        with open(os.path.join(self._root, '.deps.lock'), 'w') as fout:
+        with open(path, 'w') as fout:
             json.dump(d, fout, indent=2, sort_keys=True)
 

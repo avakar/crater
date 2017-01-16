@@ -26,7 +26,8 @@ def _checkout(lock):
 
 def _commit(lock):
     for crate in lock.crates():
-        crate.commit()
+        crate.update()
+    lock.save()
     return 0
 
 def _status(lock):
@@ -171,7 +172,7 @@ def find_root(dir):
 
     return dir
 
-def main(*argv):
+def _main(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument('--root')
     sp = ap.add_subparsers()
@@ -227,5 +228,8 @@ def main(*argv):
 
     return fn(lock=lock, **vars(args))
 
+def main():
+    return _main(sys.argv[1:])
+
 if __name__ == '__main__':
-    sys.exit(main(*sys.argv))
+    sys.exit(main())

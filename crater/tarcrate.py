@@ -94,5 +94,5 @@ class TarCrate(CrateBase):
         with open(os.path.join(self.path, '.crate.manifest'), 'w') as fout:
             fout.write(manifest)
 
-    def commit(self):
+    def update(self):
         pass
