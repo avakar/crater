@@ -102,28 +102,11 @@ def _add_git_crate(lock, url, target, branch, quiet):
     if lock.get_crate(crate_path):
         raise RuntimeError('there already is a dependency in {}'.format(target))
 
-    cmd = ['git', 'clone', url, target]
-    if quiet:
-        cmd.append('-q')
-    if branch:
-        cmd.extend(('-b', branch))
+    dep_spec = { 'url': url }
+    if branch is not None:
+        dep_spec['branch'] = branch
 
-    r = subprocess.call(cmd, cwd=lock.root())
-    if r != 0:
-        return r
-
-    try:
-        commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=os.path.join(lock.root(), target)).strip().decode('ascii')
-    except:
-        def readonly_handler(rm_func, path, exc_info):
-            if issubclass(exc_info[0], OSError) and exc_info[1].winerror == 5:
-                os.chmod(path, stat.S_IWRITE)
-                return rm_func(path)
-            raise exc_info[1]
-        shutil.rmtree(target, onerror=readonly_handler)
-        raise
-
-    new_crate = GitCrate(lock.root(), crate_path, commit, url)
+    new_crate = GitCrate.init(lock.root(), crate_path, dep_spec)
 
     dep_name = os.path.split(target)[1]
     for crate in lock.crates():

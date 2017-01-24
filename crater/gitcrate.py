@@ -22,6 +22,30 @@ class GitCrate(CrateBase):
     def load(cls, root, name, spec):
         return cls(root, name, spec['commit'], spec['url'])
 
+    @classmethod
+    def init(cls, root, name, dep_spec):
+        url = dep_spec['url']
+        target = os.path.join(root, name)
+        branch = dep_spec.get('branch', 'master')
+
+        r = subprocess.call(['git', 'clone', url, target, '-b', branch])
+        if r != 0:
+            return r
+
+        try:
+            subprocess.check_call(['git', 'config', 'hooks.suppresscrater', 'true'], cwd=target)
+            commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=target).strip().decode('ascii')
+        except:
+            def readonly_handler(rm_func, path, exc_info):
+                if issubclass(exc_info[0], OSError) and exc_info[1].winerror == 5:
+                    os.chmod(path, stat.S_IWRITE)
+                    return rm_func(path)
+                raise exc_info[1]
+            shutil.rmtree(target, onerror=readonly_handler)
+            raise
+
+        return GitCrate(root, name, commit, url)
+
     def save(self):
         r = {
             'type': 'git',
