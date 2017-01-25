@@ -196,8 +196,9 @@ def _main(argv):
     p.add_argument('crate')
     p.set_defaults(fn=_assign)
 
-    p = sp.add_parser('status')
-    p.set_defaults(fn=_status)
+    for cmd in ('st', 'status'):
+        p = sp.add_parser(cmd)
+        p.set_defaults(fn=_status)
 
     args = ap.parse_args(argv)
 
