@@ -7,7 +7,7 @@ import os, errno, shutil, stat
 import subprocess
 import six
 
-from .lockfile import parse_lockfile
+from .lockfile import parse_lockfile, init_crate
 from .gitcrate import GitCrate
 from .tarcrate import TarCrate
 from .gen import gen
@@ -52,6 +52,50 @@ def _status(lock):
         print('{}       {}'.format(status, name))
     return 0
 
+def _upgrade(lock, depid, target_dir):
+    crates_to_upgrade = []
+
+    def find_reverse_deps(crate):
+        r = []
+        for src in lock.crates():
+            for dep_name, dest in src.deps():
+                if dest == crate:
+                    r.append((src, dep_name))
+        return r
+
+    if depid is None:
+        for crate in lock.crates():
+            crates_to_upgrade.append((crate, find_reverse_deps(crate)))
+        # TODO: unchecked deps
+    else:
+        crate, dep_name = lock.parse_depid(depid)
+        target_crate = crate.get_dep(dep_name)
+
+        if target_crate is None:
+            crates_to_upgrade.append((None, [(crate, dep_name)]))
+        else:
+            crates_to_upgrade.append((target_crate, find_reverse_deps(target_crate)))
+
+    for crate, dep_list in crates_to_upgrade:
+        assert dep_list
+        dep_crate, dep_name = dep_list[0]
+        dep_spec = dep_crate.get_dep_spec(dep_name)
+
+        for dep_crate, dep_name in dep_list[1:]:
+            dep_spec = join_dep_specs(dep_spec, dep_crate.get_dep_spec(dep_name))
+
+        if crate is None:
+            if target_dir is None:
+                target_dir = lock.new_unique_crate_name(dep_spec)
+            new_crate = lock.init_crate(dep_spec, target_dir)
+
+            for dep_crate, dep_name in dep_list:
+                dep_crate.set_dep(dep_name, new_crate)
+        else:
+            crate.upgrade(dep_spec)
+
+    lock.save()
+
 def _list_deps(lock):
     r = []
     for crate in lock.crates():
@@ -91,29 +135,27 @@ def _remove(lock, target):
     lock.save()
 
 def _add_git_crate(lock, url, target, branch, quiet):
-    if target is None:
-        target = url.replace('\\', '/').rsplit('/', 1)[-1]
-        if target.endswith('.git'):
-            target = target[:-4]
-        target = os.path.join(lock.root(), '_deps', target)
+    dep_spec = {
+        'type': 'git',
+        'url': url,
+        }
 
-    crate_path = os.path.relpath(target, lock.root()).replace('\\', '/')
-
-    if lock.get_crate(crate_path):
-        raise RuntimeError('there already is a dependency in {}'.format(target))
-
-    dep_spec = { 'url': url }
     if branch is not None:
         dep_spec['branch'] = branch
 
-    new_crate = GitCrate.init(lock.root(), crate_path, dep_spec)
+    if target is None:
+        crate_name = lock.new_unique_crate_name(dep_spec)
+        target = crate_name
+    else:
+        crate_name = lock.crate_name_from_path(target)
+
+    new_crate = lock.init_crate(dep_spec, crate_name)
 
     dep_name = os.path.split(target)[1]
     for crate in lock.crates():
         if dep_name not in crate._deps and dep_name in crate._dep_specs:
             crate.set_dep(dep_name, new_crate)
 
-    lock.add(new_crate)
     lock.save()
 
     _status(lock)
@@ -199,6 +241,11 @@ def _main(argv):
     for cmd in ('st', 'status'):
         p = sp.add_parser(cmd)
         p.set_defaults(fn=_status)
+
+    p = sp.add_parser('upgrade')
+    p.add_argument('depid', nargs='?')
+    p.add_argument('target_dir', nargs='?')
+    p.set_defaults(fn=_upgrade)
 
     args = ap.parse_args(argv)
 

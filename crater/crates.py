@@ -27,6 +27,9 @@ class CrateBase:
     def get_dep(self, dep):
         return self._deps.get(dep)
 
+    def get_dep_spec(self, dep_name):
+        return self._dep_specs.get(dep_name)
+
     def deps(self):
         return six.iteritems(self._deps)
 

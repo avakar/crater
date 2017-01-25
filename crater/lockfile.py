@@ -1,4 +1,4 @@
-import os, json, errno, six, cson
+import os, json, errno, six, cson, random, string
 from .crates import SelfCrate
 from .gitcrate import GitCrate
 from .tarcrate import TarCrate
@@ -11,6 +11,12 @@ _crate_types = {
 def is_valid_crate_name(name):
     parts = name.split('/')
     return name == '' or all(part and part[0] != ' ' and part[-1] not in ('.', ' ') and '\\' not in part and ':' not in part for part in parts)
+
+def init_crate(lock, crate_name, dep_spec):
+    type = _crate_types.get(dep_spec.get('type'))
+    if type is None:
+        raise RuntimeError('unknown dependency type: {}'.format(type))
+    return type.init(lock.root(), crate_name, dep_spec)
 
 def parse_lockfile(root):
     try:
@@ -74,14 +80,7 @@ class _LockFile:
         return six.itervalues(self._crates)
 
     def locate_crate(self, path):
-        path = path or '.'
-
-        rpath = os.path.normpath(os.path.relpath(path, self._root)).replace('\\', '/')
-        if rpath == '..' or rpath.startswith('..'):
-            raise RuntimeError('crate is outside the root: {}'.format(path))
-
-        if rpath == '.':
-            rpath = ''
+        rpath = self.crate_name_from_path(path)
 
         # There is a crate with path '', so this will surely find one
         for crate_rpath in sorted(self._crates):
@@ -89,6 +88,67 @@ class _LockFile:
                 return self._crates[crate_rpath]
 
         assert False
+
+    def crate_name_from_path(self, path):
+        path = path or '.'
+
+        rpath = os.path.normpath(os.path.relpath(path, self._root)).replace('\\', '/')
+        if rpath == '..' or rpath.startswith('..'):
+            raise RuntimeError('crate is outside the root: {}'.format(path))
+        if rpath == '.':
+            rpath = ''
+
+        return rpath
+
+    def new_unique_crate_name(self, dep_spec, deps_dir=None):
+        typeid = dep_spec.get('type')
+        type = _crate_types.get(typeid)
+        if type is None:
+            raise RuntimeError('unknown crate type: {}'.format(typeid))
+
+        hint = type.name_hint(dep_spec)
+        deps_dir = self.guess_deps_dir(deps_dir)
+        target_dir = os.path.join(deps_dir, hint)
+        if os.path.exists(target_dir):
+            target_dir += '-'
+            target_dir += random.choice(string.ascii_lowercase)
+            while os.path.exists(target_dir):
+                target_dir += random.choice(string.ascii_lowercase)
+
+        return self.crate_name_from_path(target_dir)
+
+    def guess_deps_dir(self, deps_dir=None):
+        if deps_dir is not None:
+            return deps_dir
+
+        common_prefix = None
+        for crate_name in self._crates:
+            if not crate_name:
+                continue
+
+            if common_prefix is None:
+                common_prefix = crate_name.split('/')[:-1]
+            else:
+                components = crate_name.split('/')
+                for i, (l, r) in enumerate(zip(common_prefix, components)):
+                    if l != r:
+                        common_prefix = common_prefix[:i]
+                        break
+
+        if not common_prefix:
+            return os.path.join(self._root, '_deps')
+
+        return os.path.join(self._root, *common_prefix)
+
+    def init_crate(self, dep_spec, crate_name):
+        typeid = dep_spec.get('type')
+        type = _crate_types.get(typeid)
+        if type is None:
+            raise RuntimeError('unknown crate type: {}'.format(typeid))
+
+        new_crate = type.init(self.root(), crate_name, dep_spec)
+        self.add(new_crate)
+        return new_crate
 
     def add(self, crate):
         if crate.name in self._crates:

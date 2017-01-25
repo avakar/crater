@@ -46,6 +46,15 @@ class GitCrate(CrateBase):
 
         return GitCrate(root, name, commit, url)
 
+    @classmethod
+    def name_hint(cls, dep_spec):
+        url = dep_spec['url']
+
+        hint = url.replace('\\', '/').rsplit('/', 1)[-1]
+        if hint.endswith('.git'):
+            hint = hint[:-4]
+        return hint
+
     def save(self):
         r = {
             'type': 'git',
