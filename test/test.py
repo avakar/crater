@@ -1,4 +1,5 @@
 import shutil, tempfile, subprocess, os, sys, unittest, stat, json
+from crater.log import Log
 
 def _rmtree_ro(path):
     def del_rw(action, name, exc):
@@ -71,6 +72,42 @@ class Git:
     def current_commit(self):
         return subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=self.path).strip().decode()
 
+class TestLog:
+    def __init__(self):
+        self._devnull = open(os.devnull, 'r+b')
+
+    def call(self, *args, **kw):
+        kw.setdefault('stdout', self._devnull)
+        kw.setdefault('stderr', self._devnull)
+
+        if kw['stdout'] is None:
+            kw['stdout'] = self._devnull
+        if kw['stderr'] is None:
+            kw['stderr'] = self._devnull
+
+        return subprocess.call(*args, **kw)
+
+    def check_call(self, *args, **kw):
+        kw.setdefault('stdout', self._devnull)
+        kw.setdefault('stderr', self._devnull)
+
+        if kw['stdout'] is None:
+            kw['stdout'] = self._devnull
+        if kw['stderr'] is None:
+            kw['stderr'] = self._devnull
+
+        return subprocess.check_call(*args, **kw)
+
+    def check_output(self, *args, **kw):
+        kw.setdefault('stderr', self._devnull)
+        if kw['stderr'] is None:
+            kw['stderr'] = self._devnull
+
+        return subprocess.check_output(*args, **kw)
+
+    def write(self, s):
+        pass
+
 class TestCrater(unittest.TestCase):
     def __init__(self, *args, **kw):
         super(TestCrater, self).__init__(*args, **kw)
@@ -86,18 +123,11 @@ class TestCrater(unittest.TestCase):
         return super(TestCrater, self).tearDown()
 
     def _crater_call(self, cmd, **kw):
-        if 0:
-            from crater import crater
-            r = crater._main(cmd)
-            if r:
-                raise subprocess.CalledProcessError(r, cmd, '')
-        else:
-            cmd = [sys.executable, '-c', 'import sys; sys.path.insert(0, {}); from crater import crater; sys.exit(crater.main())'.format(repr(self._pypath))] + cmd
-
-            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kw)
-            stdout, stderr = p.communicate()
-            if p.returncode != 0:
-                raise subprocess.CalledProcessError(p.returncode, cmd, stdout)
+        from crater import crater
+        with open(os.devnull, 'wb') as devnull:
+            r = crater._main(cmd, TestLog())
+        if r:
+            raise subprocess.CalledProcessError(r, cmd, '')
 
     def test_checkout_nolock(self):
         self._crater_call(['checkout'])

@@ -15,16 +15,16 @@ def is_valid_crate_name(name):
     return name == '' or all(part and part[0] != ' ' and part[-1] not in ('.', ' ') and '\\' not in part and ':' not in part for part in parts)
 
 class SelfLock:
-    def checkout(self, path):
+    def checkout(self, path, log):
         pass
 
     def save(self):
         return {}
 
-    def status(self, path):
+    def status(self, path, log):
         return self
 
-def parse_lockfile(root):
+def parse_lockfile(root, log):
     try:
         with open(os.path.join(root, '.deps.lock'), 'r') as fin:
             d = json.load(fin)
@@ -46,14 +46,14 @@ def parse_lockfile(root):
         type = spec.get('type')
         if type is None:
             if name == '':
-                return Crate(root, '', SelfLock())
+                return Crate(root, '', SelfLock(), log)
             else:
                 raise RuntimeError('expected "type" attribute for crate {}'.format(path))
         else:
             cls = _crate_types.get(type)
             if cls is None:
                 raise RuntimeError('unknown dependency type: {}'.format(type))
-            return Crate(root, name, cls.load_lock(spec))
+            return Crate(root, name, cls.load_lock(spec), log)
 
     crates = {}
     for name, spec in six.iteritems(d):
@@ -72,13 +72,14 @@ def parse_lockfile(root):
 
         crate.reload_deps()
 
-    return _LockFile(root, crates)
+    return _LockFile(root, crates, log)
 
 class Crate:
-    def __init__(self, root, name, lock):
+    def __init__(self, root, name, lock, log):
         self.name = name
         self.path = os.path.join(root, name)
 
+        self._log = log
         self._lock = lock
         self._root = root
         self._gen = {}
@@ -97,15 +98,15 @@ class Crate:
         self._gen = d.get('gen', {})
 
         self._dep_specs = {}
-        for dep_name, spec in d.get('dependencies', {}):
+        for dep_name, spec in six.iteritems(d.get('dependencies', {})):
             handler = _crate_types[spec['type']]
             self._dep_specs[dep_name] = handler.load_depspec(spec)
 
     def checkout(self):
-        self._lock.checkout(self.path)
+        self._lock.checkout(self.path, self._log)
 
     def update(self):
-        new_lock = self._lock.status(self.path)
+        new_lock = self._lock.status(self.path, self._log)
         if new_lock is None:
             raise RuntimeError('the crate is corrupted somehow: {}'.format(self.path))
         self._lock = new_lock
@@ -137,9 +138,10 @@ class Crate:
         return d
 
 class _LockFile:
-    def __init__(self, root, crates):
+    def __init__(self, root, crates, log):
         self._root = root
         self._crates = crates
+        self.log = log
 
     def root(self):
         return self._root
@@ -205,12 +207,12 @@ class _LockFile:
 
     def init_crate(self, dep_spec, crate_name):
         path = os.path.join(self._root, crate_name)
-        lock = dep_spec.init(path)
+        lock = dep_spec.init(path, self.log)
 
-        crate = Crate(self._root, crate_name, lock)
+        crate = Crate(self._root, crate_name, lock, self.log)
         self.add(crate)
 
-        lock.checkout(crate.path)
+        lock.checkout(crate.path, self.log)
         return crate
 
     def add(self, crate):

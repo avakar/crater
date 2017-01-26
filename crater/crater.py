@@ -7,6 +7,7 @@ import os, errno, shutil, stat
 import subprocess
 import six
 
+from .log import Log
 from .lockfile import parse_lockfile
 from .gitcrate import GitCrate, GitDepSpec
 from .tarcrate import TarCrate
@@ -191,7 +192,7 @@ def find_root(dir):
 
     return dir
 
-def _main(argv):
+def _main(argv, log):
     ap = argparse.ArgumentParser()
     ap.add_argument('--root')
     sp = ap.add_subparsers()
@@ -249,12 +250,12 @@ def _main(argv):
     root = args.root or find_root('.')
     del args.root
 
-    lock = parse_lockfile(root)
+    lock = parse_lockfile(root, log)
 
     return fn(lock=lock, **vars(args))
 
 def main():
-    return _main(sys.argv[1:])
+    return _main(sys.argv[1:], Log(sys.stderr))
 
 if __name__ == '__main__':
     sys.exit(main())
