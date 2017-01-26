@@ -55,6 +55,7 @@ class Git:
 
     def init(self):
         subprocess.check_call(['git', 'init', '-q'], cwd=self.path)
+        subprocess.check_call(['git', 'config', 'hooks.suppresscrater', 'true'], cwd=self.path)
 
     def add(self, name):
         open(os.path.join(self.path, name), 'w').close()

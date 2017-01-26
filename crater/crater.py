@@ -7,8 +7,8 @@ import os, errno, shutil, stat
 import subprocess
 import six
 
-from .lockfile import parse_lockfile, init_crate
-from .gitcrate import GitCrate
+from .lockfile import parse_lockfile
+from .gitcrate import GitCrate, GitDepSpec
 from .tarcrate import TarCrate
 from .gen import gen
 
@@ -135,13 +135,7 @@ def _remove(lock, target):
     lock.save()
 
 def _add_git_crate(lock, url, target, branch, quiet):
-    dep_spec = {
-        'type': 'git',
-        'url': url,
-        }
-
-    if branch is not None:
-        dep_spec['branch'] = branch
+    dep_spec = GitDepSpec(url, [branch or 'master'])
 
     if target is None:
         crate_name = lock.new_unique_crate_name(dep_spec)

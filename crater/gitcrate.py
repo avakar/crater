@@ -1,40 +1,84 @@
-from .crates import CrateBase
-import subprocess, os, errno, sys
+import subprocess, os, errno, sys, six
 
-class GitCrate(CrateBase):
-    def __init__(self, root, name, commit, url):
-        CrateBase.__init__(self, root, name)
-        self.commit = commit
-        self.url = url
+class GitLock:
+    def __init__(self, url, commit, dirty=False):
+        self.dirty = dirty
 
-    def status(self):
-        try:
-            commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=self.path).strip()
-        except subprocess.CalledProcessError as e:
-            return 'D'
+        self._url = url
+        self._commit = commit
 
-        if self.commit == commit:
-            return ' '
+    def save(self):
+        assert not self.dirty
+        return {
+            'type': 'git',
+            'commit': self._commit,
+            'url': self._url,
+            }
+
+    def checkout(self, path):
+        _clean_env()
+        if os.path.isdir(os.path.join(path, '.git')):
+            with open(os.devnull, 'w') as devnull:
+                r = subprocess.call(['git', 'rev-parse', '--verify', '--quiet', '{}^{{commit}}'.format(self._commit)], stdout=devnull, cwd=path)
+            if r != 0:
+                subprocess.check_call(['git', 'fetch', 'origin'], cwd=path)
+
+            #commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=path).strip()
+            #if commit == self._commit:
+            #    return
         else:
-            return 'M'
+            try:
+                os.makedirs(os.path.split(path)[0])
+            except OSError as e:
+                if e.errno != errno.EEXIST:
+                    raise
+
+            subprocess.check_call(['git', 'clone', self._url, path, '--no-checkout'])
+
+        # XXX print('checkout {} to {}'.format(lock.commit, lock.path))
+        subprocess.check_call(['git', 'config', 'hooks.suppresscrater', 'true'], cwd=path)
+        subprocess.check_call(['git', '-c', 'advice.detachedHead=false', 'checkout', self._commit], cwd=path)
 
     @classmethod
-    def load(cls, root, name, spec):
-        return cls(root, name, spec['commit'], spec['url'])
+    def status(cls, path):
+        try:
+            commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=path).strip()
+            origin = subprocess.check_output(['git', 'config', '--get', 'remote.origin.url'], cwd=path).strip()
 
-    @classmethod
-    def init(cls, root, name, dep_spec):
-        url = dep_spec['url']
-        target = os.path.join(root, name)
-        branch = dep_spec.get('branch', 'master')
+            subprocess.check_call(['git', 'update-index', '-q', '--refresh'], cwd=path)
+            dirty = subprocess.call(['git', 'diff-index', '--quiet', 'HEAD', '--'], cwd=path) != 0
+        except subprocess.CalledProcessError as e:
+            return None
 
-        r = subprocess.call(['git', 'clone', url, target, '-b', branch])
-        if r != 0:
-            return r
+        return cls(origin, commit, dirty)
+
+class GitDepSpec:
+    def __init__(self, url, branches):
+        self.handler = GitCrate
+
+        self._url = url
+        self._branches = branches
+
+    def name_hint(self):
+        hint = self._url.replace('\\', '/').rsplit('/', 1)[-1]
+        if hint.endswith('.git'):
+            hint = hint[:-4]
+        return hint
+
+    def init(self, path):
+        assert self._branches
+
+        subprocess.check_call(['git', 'clone', self._url, path, '--no-checkout'])
 
         try:
-            subprocess.check_call(['git', 'config', 'hooks.suppresscrater', 'true'], cwd=target)
-            commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=target).strip().decode('ascii')
+            subprocess.check_call(['git', 'fetch', 'origin'] + self._branches, cwd=path)
+
+            if len(self._branches) == 1:
+                merge_base = _get_git_commit(path, self._branches[0])
+            else:
+                merge_base = subprocess.check_output(['git', 'merge-base'] + ['origin/{}'.format(b) for b in self._branches], cwd=path).strip()
+
+            return GitLock(self._url, merge_base)
         except:
             def readonly_handler(rm_func, path, exc_info):
                 if issubclass(exc_info[0], OSError) and exc_info[1].winerror == 5:
@@ -44,64 +88,30 @@ class GitCrate(CrateBase):
             shutil.rmtree(target, onerror=readonly_handler)
             raise
 
-        return GitCrate(root, name, commit, url)
+    def handler(self):
+        return GitCrate
+
+class GitCrate:
+    @classmethod
+    def load_lock(cls, spec):
+        return GitLock(spec['url'], spec['commit'])
 
     @classmethod
-    def name_hint(cls, dep_spec):
-        url = dep_spec['url']
+    def load_depspec(cls, spec):
+        url = spec['url']
+        branches = spec.get('branch', 'master')
+        if isinstance(branches, six.string_types):
+            branches = [branches]
 
-        hint = url.replace('\\', '/').rsplit('/', 1)[-1]
-        if hint.endswith('.git'):
-            hint = hint[:-4]
-        return hint
+        return GitDepSpec(url, branches)
 
-    def save(self):
-        r = {
-            'type': 'git',
-            'commit': self.commit,
-            'url': self.url,
-            }
-        self._save_deps(r)
-        return r
 
-    def checkout(self):
-        self._clean_env()
-        if os.path.isdir(os.path.join(self.path, '.git')):
-            with open(os.devnull, 'w') as devnull:
-                r = subprocess.call(['git', 'rev-parse', '--verify', '--quiet', '{}^{{commit}}'.format(self.commit)], stdout=devnull, cwd=self.path)
-            if r != 0:
-                subprocess.check_call(['git', 'fetch', 'origin'], cwd=self.path)
+def _get_git_commit(path, ref='HEAD'):
+    return subprocess.check_output(['git', 'rev-parse', '--verify', ref], cwd=path).strip()
 
-            commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=self.path).strip()
-            if commit == self.commit:
-                return
-        else:
-            try:
-                os.makedirs(os.path.split(self.path)[0])
-            except OSError as e:
-                if e.errno != errno.EEXIST:
-                    raise
-
-            subprocess.check_call(['git', 'clone', self.url, self.path, '--no-checkout'])
-
-        print('checkout {} to {}'.format(self.commit, self.path))
-        subprocess.check_call(['git', 'config', 'hooks.suppresscrater', 'true'], cwd=self.path)
-        subprocess.check_call(['git', '-c', 'advice.detachedHead=false', 'checkout', self.commit], cwd=self.path)
-
-    def update(self):
-        self._clean_env()
-        subprocess.check_call(['git', 'update-index', '-q', '--refresh'], cwd=self.path)
-
-        r = subprocess.call(['git', 'diff-index', '--quiet', 'HEAD', '--'], cwd=self.path)
-        if r != 0:
-            raise RuntimeError('error: there are changes in {}'.format(self.path))
-
-        commit = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=self.path).strip().decode()
-        self.commit = commit
-
-    def _clean_env(self):
-        # This is a workaround. For whatever reason, git calls are not reentrant.
-        for key in list(os.environ):
-            if key.startswith('GIT_') and key != 'GIT_SSH':
-                os.unsetenv(key)
-                del os.environ[key]
+def _clean_env():
+    # This is a workaround. For whatever reason, git calls are not reentrant.
+    for key in list(os.environ):
+        if key.startswith('GIT_') and key != 'GIT_SSH':
+            os.unsetenv(key)
+            del os.environ[key]

@@ -1,5 +1,4 @@
 import os, json, errno, six, cson, random, string
-from .crates import SelfCrate
 from .gitcrate import GitCrate
 from .tarcrate import TarCrate
 
@@ -8,15 +7,22 @@ _crate_types = {
     'tar': TarCrate,
     }
 
+def is_valid_dep_name(name):
+    return name and ':' not in name
+
 def is_valid_crate_name(name):
     parts = name.split('/')
     return name == '' or all(part and part[0] != ' ' and part[-1] not in ('.', ' ') and '\\' not in part and ':' not in part for part in parts)
 
-def init_crate(lock, crate_name, dep_spec):
-    type = _crate_types.get(dep_spec.get('type'))
-    if type is None:
-        raise RuntimeError('unknown dependency type: {}'.format(type))
-    return type.init(lock.root(), crate_name, dep_spec)
+class SelfLock:
+    def checkout(self, path):
+        pass
+
+    def save(self):
+        return {}
+
+    def status(self, path):
+        return self
 
 def parse_lockfile(root):
     try:
@@ -40,14 +46,14 @@ def parse_lockfile(root):
         type = spec.get('type')
         if type is None:
             if name == '':
-                return SelfCrate(root)
+                return Crate(root, '', SelfLock())
             else:
                 raise RuntimeError('expected "type" attribute for crate {}'.format(path))
         else:
             cls = _crate_types.get(type)
             if cls is None:
                 raise RuntimeError('unknown dependency type: {}'.format(type))
-            return cls.load(root, name, spec)
+            return Crate(root, name, cls.load_lock(spec))
 
     crates = {}
     for name, spec in six.iteritems(d):
@@ -67,6 +73,68 @@ def parse_lockfile(root):
         crate.reload_deps()
 
     return _LockFile(root, crates)
+
+class Crate:
+    def __init__(self, root, name, lock):
+        self.name = name
+        self.path = os.path.join(root, name)
+
+        self._lock = lock
+        self._root = root
+        self._gen = {}
+        self._deps = {}
+        self._dep_specs = {}
+
+    def reload_deps(self):
+        try:
+            with open(os.path.join(self.path, 'DEPS'), 'r') as fin:
+                d = cson.load(fin)
+        except IOError as e:
+            if e.errno != errno.ENOENT:
+                raise
+            d = {}
+
+        self._gen = d.get('gen', {})
+
+        self._dep_specs = {}
+        for dep_name, spec in d.get('dependencies', {}):
+            handler = _crate_types[spec['type']]
+            self._dep_specs[dep_name] = handler.load_depspec(spec)
+
+    def checkout(self):
+        self._lock.checkout(self.path)
+
+    def update(self):
+        new_lock = self._lock.status(self.path)
+        if new_lock is None:
+            raise RuntimeError('the crate is corrupted somehow: {}'.format(self.path))
+        self._lock = new_lock
+
+    def get_dep(self, dep):
+        return self._deps.get(dep)
+
+    def get_dep_spec(self, dep_name):
+        return self._dep_specs.get(dep_name)
+
+    def deps(self):
+        return six.iteritems(self._deps)
+
+    def dep_specs(self):
+        return six.iteritems(self._dep_specs)
+
+    def set_dep(self, name, target_crate):
+        if not is_valid_dep_name(name):
+            raise RuntimeError('invalid name for a dependency'.format(':'))
+        self._deps[name] = target_crate
+
+    def status(self):
+        return '?'
+
+    def save(self):
+        d = self._lock.save()
+        if self._deps:
+            d['dependencies'] = { name: crate.name for name, crate in six.iteritems(self._deps) }
+        return d
 
 class _LockFile:
     def __init__(self, root, crates):
@@ -101,12 +169,7 @@ class _LockFile:
         return rpath
 
     def new_unique_crate_name(self, dep_spec, deps_dir=None):
-        typeid = dep_spec.get('type')
-        type = _crate_types.get(typeid)
-        if type is None:
-            raise RuntimeError('unknown crate type: {}'.format(typeid))
-
-        hint = type.name_hint(dep_spec)
+        hint = dep_spec.name_hint()
         deps_dir = self.guess_deps_dir(deps_dir)
         target_dir = os.path.join(deps_dir, hint)
         if os.path.exists(target_dir):
@@ -141,14 +204,14 @@ class _LockFile:
         return os.path.join(self._root, *common_prefix)
 
     def init_crate(self, dep_spec, crate_name):
-        typeid = dep_spec.get('type')
-        type = _crate_types.get(typeid)
-        if type is None:
-            raise RuntimeError('unknown crate type: {}'.format(typeid))
+        path = os.path.join(self._root, crate_name)
+        lock = dep_spec.init(path)
 
-        new_crate = type.init(self.root(), crate_name, dep_spec)
-        self.add(new_crate)
-        return new_crate
+        crate = Crate(self._root, crate_name, lock)
+        self.add(crate)
+
+        lock.checkout(crate.path)
+        return crate
 
     def add(self, crate):
         if crate.name in self._crates:

@@ -1,7 +1,6 @@
-from .crates import CrateBase
 import subprocess, os, errno, sys, requests, tarfile, hashlib, shutil
 
-class TarCrate(CrateBase):
+class TarCrate:
     def __init__(self, root, name, hash, url, subdir, exclude):
         CrateBase.__init__(self, root, name)
         self.hash = hash
