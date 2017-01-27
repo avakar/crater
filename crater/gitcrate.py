@@ -49,8 +49,8 @@ class GitLock:
     @classmethod
     def status(cls, path, log):
         try:
-            commit = log.check_output(['git', 'rev-parse', '--quiet', '--verify', 'HEAD'], cwd=path).strip()
-            origin = log.check_output(['git', 'config', '--get', 'remote.origin.url'], cwd=path).strip()
+            commit = log.check_output(['git', 'rev-parse', '--quiet', '--verify', 'HEAD'], cwd=path).decode().strip()
+            origin = log.check_output(['git', 'config', '--get', 'remote.origin.url'], cwd=path).decode().strip()
 
             log.check_call(['git', 'update-index', '-q', '--refresh'], cwd=path)
             dirty = log.call(['git', 'diff-index', '--quiet', 'HEAD', '--'], cwd=path) != 0
@@ -81,9 +81,9 @@ class GitDepSpec:
             log.check_call(['git', 'fetch', 'origin'] + self._branches, cwd=path)
 
             if len(self._branches) == 1:
-                merge_base = log.check_output(['git', 'rev-parse', '--quiet', '--verify', self._branches[0]], cwd=path).strip()
+                merge_base = log.check_output(['git', 'rev-parse', '--quiet', '--verify', self._branches[0]], cwd=path).decode().strip()
             else:
-                merge_base = log.check_output(['git', 'merge-base'] + ['origin/{}'.format(b) for b in self._branches], cwd=path).strip()
+                merge_base = log.check_output(['git', 'merge-base'] + ['origin/{}'.format(b) for b in self._branches], cwd=path).decode().strip()
 
             return GitLock(self._url, merge_base)
         except:

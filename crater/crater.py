@@ -54,23 +54,26 @@ def _status(lock):
                 stati[target] = target.status()
 
             full_name = '{}:{}'.format(crate.name, dep_name)
-            r.append((full_name, stati[target], target))
+            r.append((full_name, stati[target], os.path.relpath(target.path)))
 
         for dep_name in (name for name, spec in crate.dep_specs() if name not in assigned):
             full_name = '{}:{}'.format(crate.name, dep_name)
-            r.append((full_name, 'U ', None))
+            r.append((full_name, 'U ', ''))
 
-    r.sort(key=lambda (name, status, target): (target.name, name))
+    if not r:
+        return 0
+
+    r.sort(key=lambda r: (r[2], r[1]))
 
     max_name_len = max(len(name) for name, status, target in r)
     templ = '{{}}      {{:<{}s}}'.format(max_name_len)
 
-    last_target = None
+    last_target = ''
     for name, status, target in r:
         if target == last_target:
             lock.log.write(templ.format(status, name) + '\n')
         else:
-            lock.log.write(templ.format(status, name) + '    {}\n'.format(os.path.relpath(target.path)))
+            lock.log.write(templ.format(status, name) + '    {}\n'.format(target))
             last_target = target
 
     return 0

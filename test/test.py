@@ -81,7 +81,11 @@ class TestLog:
         self._devnull = open(os.devnull, 'r+b')
         self._stdout = []
 
+    def close(self):
+        self._devnull.close()
+
     def call(self, *args, **kw):
+        kw = dict(kw)
         if 'stdout' not in kw and 'stderr' not in kw:
             kw['stdout'] = subprocess.PIPE
             kw['stderr'] = subprocess.STDOUT
@@ -116,13 +120,13 @@ class TestLog:
         return self._stdout.pop()
 
     def get_output(self):
-        return ''.join(self._stdout)
+        return b''.join(self._stdout).decode()
 
     def search_output(self, r):
-        return re.search(r, ''.join(self._stdout))
+        return re.search(r, self.get_output())
 
     def write(self, s):
-        self._stdout.append(s)
+        self._stdout.append(s.encode())
 
     def error(self, s):
         self.write('error: ' + s + '\n')
@@ -137,10 +141,10 @@ class TestCrater(unittest.TestCase):
         self.ctx = Ctx()
         self.ctx.setUp()
         self._log = TestLog()
-        #self._log = Log(sys.stderr)
 
     def tearDown(self):
         self.ctx.tearDown()
+        self._log.close()
         return super(TestCrater, self).tearDown()
 
     def _crater_check_call(self, cmd, **kw):
