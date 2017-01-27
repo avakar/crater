@@ -15,6 +15,9 @@ def is_valid_crate_name(name):
     return name == '' or all(part and part[0] != ' ' and part[-1] not in ('.', ' ') and '\\' not in part and ':' not in part for part in parts)
 
 class SelfLock:
+    def __init__(self):
+        self.dirty = False
+
     def checkout(self, path, log):
         pass
 
@@ -23,6 +26,9 @@ class SelfLock:
 
     def status(self, path, log):
         return self
+
+    def __eq__(self, rhs):
+        return isinstance(rhs, SelfLock)
 
 def parse_lockfile(root, log):
     try:
@@ -129,7 +135,14 @@ class Crate:
         self._deps[name] = target_crate
 
     def status(self):
-        return '?'
+        if not os.path.isdir(self.path):
+            return 'D '
+
+        new_lock = self._lock.status(self.path, self._log)
+        if new_lock is None:
+            return '! '
+
+        return '{}{}'.format(' ' if self._lock == new_lock else 'M', '*' if new_lock.dirty else ' ')
 
     def save(self):
         d = self._lock.save()

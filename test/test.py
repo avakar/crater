@@ -1,4 +1,4 @@
-import shutil, tempfile, subprocess, os, sys, unittest, stat, json
+import shutil, tempfile, subprocess, os, sys, unittest, stat, json, re
 from crater.log import Log
 from crater import crater
 
@@ -61,6 +61,9 @@ class Git:
 
     def add(self, name):
         open(os.path.join(self.path, name), 'w').close()
+        self.add_existing(name)
+
+    def add_existing(self, name):
         subprocess.check_call(['git', 'add', name], cwd=self.path)
 
     def commit(self):
@@ -115,11 +118,14 @@ class TestLog:
     def get_output(self):
         return ''.join(self._stdout)
 
+    def search_output(self, r):
+        return re.search(r, ''.join(self._stdout))
+
     def write(self, s):
-        pass
+        self._stdout.append(s)
 
     def error(self, s):
-        pass
+        self.write('error: ' + s + '\n')
 
 class TestCrater(unittest.TestCase):
     def __init__(self, *args, **kw):
@@ -131,6 +137,7 @@ class TestCrater(unittest.TestCase):
         self.ctx = Ctx()
         self.ctx.setUp()
         self._log = TestLog()
+        #self._log = Log(sys.stderr)
 
     def tearDown(self):
         self.ctx.tearDown()
@@ -218,6 +225,99 @@ class TestCrater(unittest.TestCase):
         self._crater_check_call(['add-git', repo.path, 'myrepo'])
 
         self.assertNotEqual(self._crater_call(['init']), 0)
+
+    def test_status_unassigned(self):
+        self._crater_check_call(['init'])
+
+        repo = self.ctx.make_repo(name='test_repo')
+        with open('DEPS', 'w') as fout:
+            json.dump({
+                'dependencies': {
+                        'myrepo': {
+                            'type': 'git',
+                            'url': repo.path,
+                            },
+                    }
+                }, fout)
+
+        self._crater_check_call(['status'])
+        self.assertEqual(self._log.get_output(), 'U       :myrepo\n')
+
+    def test_git_add_autoassign(self):
+        self._crater_check_call(['init'])
+
+        repo = self.ctx.make_repo(name='test_repo')
+        with open('DEPS', 'w') as fout:
+            json.dump({
+                'dependencies': {
+                        'test_repo': {
+                            'type': 'git',
+                            'url': repo.path,
+                            },
+                    }
+                }, fout)
+
+        self._crater_check_call(['add-git', repo.path, 'test_repo'])
+
+        self._crater_check_call(['status'])
+        self.assertTrue(self._log.search_output(r'        :test_repo [^\n]+test_repo'))
+
+    def test_status_dirty(self):
+        self._crater_check_call(['init'])
+
+        repo = self.ctx.make_repo(name='test_repo')
+        with open('DEPS', 'w') as fout:
+            json.dump({
+                'dependencies': {
+                        'test_repo': {
+                            'type': 'git',
+                            'url': repo.path,
+                            },
+                    }
+                }, fout)
+
+        self._crater_check_call(['add-git', repo.path, 'test_repo'])
+
+        with open('test_repo/content', 'a') as fout:
+            fout.write('dirtying content')
+
+        self._crater_check_call(['status'])
+        self.assertTrue(self._log.search_output(r' *      :test_repo [^\n]+test_repo'))
+
+    def test_status(self):
+        self._crater_check_call(['init'])
+
+        repo = self.ctx.make_repo(name='test_repo')
+        with open('DEPS', 'w') as fout:
+            json.dump({
+                'dependencies': {
+                        'test_repo': {
+                            'type': 'git',
+                            'url': repo.path,
+                            },
+                    }
+                }, fout)
+
+        self._crater_check_call(['add-git', repo.path, 'test_repo'])
+
+        with open('test_repo/content', 'a') as fout:
+            fout.write('dirtying content')
+
+        self._crater_check_call(['status'])
+        self.assertTrue(self._log.search_output(r' *      :test_repo [^\n]+test_repo'))
+
+        repo = Git('test_repo')
+        repo.add_existing('content')
+        repo.commit()
+
+        self._crater_check_call(['status'])
+        self.assertTrue(self._log.search_output(r'M       :test_repo [^\n]+test_repo'))
+
+        with open('test_repo/content', 'a') as fout:
+            fout.write('some more dirtying content')
+
+        self._crater_check_call(['status'])
+        self.assertTrue(self._log.search_output(r'M*      :test_repo [^\n]+test_repo'))
 
 if __name__ == '__main__':
     unittest.main()

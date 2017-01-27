@@ -40,25 +40,39 @@ def _commit(lock):
     return 0
 
 def _status(lock):
-    r = {}
+    r = []
+
+    stati = {}
 
     for crate in lock.crates():
-        unassigned = set(name for name, spec in crate.dep_specs())
+        assigned = set()
 
         for dep_name, target in crate.deps():
-            try:
-                unassigned.remove(dep_name)
-            except:
-                pass
-            full_name = '{}:{}'.format(crate.name, dep_name)
-            r[full_name] = target.status()
+            assigned.add(dep_name)
 
-        for dep_name in unassigned:
-            full_name = '{}:{}'.format(crate.name, dep_name)
-            r[full_name] = 'U'
+            if target not in stati:
+                stati[target] = target.status()
 
-    for name, status in sorted(r.items()):
-        print('{}       {}'.format(status, name))
+            full_name = '{}:{}'.format(crate.name, dep_name)
+            r.append((full_name, stati[target], target))
+
+        for dep_name in (name for name, spec in crate.dep_specs() if name not in assigned):
+            full_name = '{}:{}'.format(crate.name, dep_name)
+            r.append((full_name, 'U ', None))
+
+    r.sort(key=lambda (name, status, target): (target.name, name))
+
+    max_name_len = max(len(name) for name, status, target in r)
+    templ = '{{}}      {{:<{}s}}'.format(max_name_len)
+
+    last_target = None
+    for name, status, target in r:
+        if target == last_target:
+            lock.log.write(templ.format(status, name) + '\n')
+        else:
+            lock.log.write(templ.format(status, name) + '    {}\n'.format(os.path.relpath(target.path)))
+            last_target = target
+
     return 0
 
 def _upgrade(lock, depid, target_dir):
@@ -160,8 +174,6 @@ def _add_git_crate(lock, url, target, branch, quiet):
             crate.set_dep(dep_name, new_crate)
 
     lock.save()
-
-    _status(lock)
     return 0
 
 def _add_tar_crate(lock, url, target, subdir, exclude):

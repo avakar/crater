@@ -15,6 +15,11 @@ class GitLock:
             'url': self._url,
             }
 
+    def __eq__(self, rhs):
+        if not isinstance(rhs, GitLock):
+            return False
+        return (self._url, self._commit) == (rhs._url, rhs._commit)
+
     def checkout(self, path, log):
         _clean_env()
 
