@@ -1,5 +1,6 @@
 import shutil, tempfile, subprocess, os, sys, unittest, stat, json
 from crater.log import Log
+from crater import crater
 
 def _rmtree_ro(path):
     def del_rw(action, name, exc):
@@ -75,37 +76,49 @@ class Git:
 class TestLog:
     def __init__(self):
         self._devnull = open(os.devnull, 'r+b')
+        self._stdout = []
 
     def call(self, *args, **kw):
-        kw.setdefault('stdout', self._devnull)
-        kw.setdefault('stderr', self._devnull)
+        if 'stdout' not in kw and 'stderr' not in kw:
+            kw['stdout'] = subprocess.PIPE
+            kw['stderr'] = subprocess.STDOUT
+            src = 'stdout'
+        elif 'stdout' not in kw:
+            kw['stdout'] = subprocess.PIPE
+            src = 'stdout'
+        elif 'stderr' not in kw:
+            kw['stderr'] = subprocess.PIPE
+            src = 'stderr'
 
         if kw['stdout'] is None:
             kw['stdout'] = self._devnull
         if kw['stderr'] is None:
             kw['stderr'] = self._devnull
 
-        return subprocess.call(*args, **kw)
+        p = subprocess.Popen(*args, **kw)
+        stdout, stderr = p.communicate()
+        if src == 'stdout':
+            self._stdout.append(stdout)
+        else:
+            self._stdout.append(stderr)
+        return p.returncode
 
     def check_call(self, *args, **kw):
-        kw.setdefault('stdout', self._devnull)
-        kw.setdefault('stderr', self._devnull)
-
-        if kw['stdout'] is None:
-            kw['stdout'] = self._devnull
-        if kw['stderr'] is None:
-            kw['stderr'] = self._devnull
-
-        return subprocess.check_call(*args, **kw)
+        r = self.call(*args, **kw)
+        if r != 0:
+            raise subprocess.CalledProcessError(r, args[0])
 
     def check_output(self, *args, **kw):
-        kw.setdefault('stderr', self._devnull)
-        if kw['stderr'] is None:
-            kw['stderr'] = self._devnull
+        self.check_call(*args, **kw)
+        return self._stdout.pop()
 
-        return subprocess.check_output(*args, **kw)
+    def get_output(self):
+        return ''.join(self._stdout)
 
     def write(self, s):
+        pass
+
+    def error(self, s):
         pass
 
 class TestCrater(unittest.TestCase):
@@ -117,30 +130,35 @@ class TestCrater(unittest.TestCase):
         super(TestCrater, self).setUp()
         self.ctx = Ctx()
         self.ctx.setUp()
+        self._log = TestLog()
 
     def tearDown(self):
         self.ctx.tearDown()
         return super(TestCrater, self).tearDown()
 
-    def _crater_call(self, cmd, **kw):
-        from crater import crater
-        with open(os.devnull, 'wb') as devnull:
-            r = crater._main(cmd, TestLog())
+    def _crater_check_call(self, cmd, **kw):
+        r = self._crater_call(cmd, **kw)
         if r:
             raise subprocess.CalledProcessError(r, cmd, '')
 
+    def _crater_call(self, cmd, **kw):
+        return crater._main(cmd, self._log)
+
     def test_checkout_nolock(self):
-        self._crater_call(['checkout'])
+        self._crater_check_call(['checkout'])
         self.assertFalse(os.path.isfile('.deps.lock'))
 
     def test_commit_nolock(self):
-        self._crater_call(['commit'])
+        self._crater_check_call(['commit'])
         self.assertFalse(os.path.isfile('.deps.lock'))
+
+    def test_status_no_lock(self):
+        self._crater_check_call(['status'])
 
     def test_add_git_auto(self):
         repo = self.ctx.make_repo(name='test_repo')
 
-        self._crater_call(['add-git', repo.path])
+        self._crater_check_call(['add-git', repo.path])
 
         self.assertTrue(os.path.isfile('_deps/test_repo/content'))
         self.assertTrue(os.path.isfile('.deps.lock'))
@@ -154,7 +172,7 @@ class TestCrater(unittest.TestCase):
     def test_add_git_target(self):
         repo = self.ctx.make_repo(name='test_repo')
 
-        self._crater_call(['add-git', repo.path, '_deps/myrepo'])
+        self._crater_check_call(['add-git', repo.path, '_deps/myrepo'])
 
         self.assertTrue(os.path.isfile('_deps/myrepo/content'))
         self.assertTrue(os.path.isfile('.deps.lock'))
@@ -167,15 +185,15 @@ class TestCrater(unittest.TestCase):
 
     def test_simple_checkout(self):
         repo = self.ctx.make_repo(name='test_repo')
-        self._crater_call(['add-git', repo.path, 'myrepo'])
+        self._crater_check_call(['add-git', repo.path, 'myrepo'])
         _rmtree_ro('myrepo')
 
-        self._crater_call(['checkout'])
+        self._crater_check_call(['checkout'])
         self.assertTrue(os.path.isfile('myrepo/content'))
 
     def test_simple_commit(self):
         repo = self.ctx.make_repo(name='test_repo')
-        self._crater_call(['add-git', repo.path, 'myrepo'])
+        self._crater_check_call(['add-git', repo.path, 'myrepo'])
 
         j = _load_json('.deps.lock')
         self.assertEqual(j['myrepo']['commit'], repo.current_commit())
@@ -183,10 +201,23 @@ class TestCrater(unittest.TestCase):
         g = Git('myrepo')
         g.add('another_file')
         c = g.commit()
-        self._crater_call(['commit'])
+        self._crater_check_call(['commit'])
 
         j = _load_json('.deps.lock')
         self.assertEqual(j['myrepo']['commit'], c)
+
+    def test_init(self):
+        self.assertFalse(os.path.exists('.deps.lock'))
+
+        self._crater_check_call(['init'])
+        self.assertTrue(os.path.exists('.deps.lock'))
+
+        self._crater_check_call(['init'])
+
+        repo = self.ctx.make_repo(name='test_repo')
+        self._crater_check_call(['add-git', repo.path, 'myrepo'])
+
+        self.assertNotEqual(self._crater_call(['init']), 0)
 
 if __name__ == '__main__':
     unittest.main()

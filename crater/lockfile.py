@@ -251,13 +251,16 @@ class _LockFile:
         for dep in self.deps.values():
             go(os.path.join(self.root, dep.dir), '{}:'.format(dep.dir))
 
-    def save(self):
+    def is_empty(self):
+        return len(self._crates) == 1 and not self._crates['']._deps
+
+    def save(self, force=False):
         d = { crate.name: crate.save() for crate in six.itervalues(self._crates) }
 
         assert '' in d
 
         path = os.path.join(self._root, '.deps.lock')
-        if len(d) == 1 and not d[''] and not os.path.isfile(path):
+        if not force and self.is_empty() and not os.path.isfile(path):
             return
 
         with open(path, 'w') as fout:

@@ -86,3 +86,6 @@ class Log:
 
     def write(self, s):
         self._stderr.write(s)
+
+    def error(self, s):
+        self._stderr.write('error: {}\n'.format(s))

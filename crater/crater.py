@@ -13,6 +13,14 @@ from .gitcrate import GitCrate, GitDepSpec
 from .tarcrate import TarCrate
 from .gen import gen
 
+def _init(lock):
+    if not lock.is_empty():
+        lock.log.error('the crate is already initialized')
+        return 1
+
+    lock.save(force=True)
+    return 0
+
 def _checkout(lock):
     for crate in lock.crates():
         crate.checkout()
@@ -196,6 +204,9 @@ def _main(argv, log):
     ap = argparse.ArgumentParser()
     ap.add_argument('--root')
     sp = ap.add_subparsers()
+
+    p = sp.add_parser('init')
+    p.set_defaults(fn=_init)
 
     for cmd in ('checkout', 'co'):
         p = sp.add_parser(cmd)
