@@ -14,6 +14,12 @@ def is_valid_crate_name(name):
     parts = name.split('/')
     return name == '' or all(part and part[0] != ' ' and part[-1] not in ('.', ' ') and '\\' not in part and ':' not in part for part in parts)
 
+class SelfDepSpec:
+    def join(self, o):
+        if not isinstance(o, SelfDepSpec):
+            return None
+        return self
+
 class SelfLock:
     def __init__(self):
         self.dirty = False
@@ -26,6 +32,9 @@ class SelfLock:
 
     def status(self, path, log):
         return self
+
+    def make_dep_spec(self):
+        return SelfDepSpec()
 
     def __eq__(self, rhs):
         return isinstance(rhs, SelfLock)
@@ -122,6 +131,9 @@ class Crate:
 
     def get_dep_spec(self, dep_name):
         return self._dep_specs.get(dep_name)
+
+    def self_spec(self):
+        return self._lock.make_dep_spec()
 
     def deps(self):
         return six.iteritems(self._deps)

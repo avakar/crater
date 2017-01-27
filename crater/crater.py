@@ -78,49 +78,52 @@ def _status(lock):
 
     return 0
 
-def _upgrade(lock, depid, target_dir):
-    crates_to_upgrade = []
+def _upgrade(lock, depid, target_dir, dir):
 
-    def find_reverse_deps(crate):
-        r = []
-        for src in lock.crates():
-            for dep_name, dest in src.deps():
-                if dest == crate:
-                    r.append((src, dep_name))
-        return r
+    errors = []
 
-    if depid is None:
-        for crate in lock.crates():
-            crates_to_upgrade.append((crate, find_reverse_deps(crate)))
-        # TODO: unchecked deps
-    else:
-        crate, dep_name = lock.parse_depid(depid)
-        target_crate = crate.get_dep(dep_name)
+    dir = lock.guess_deps_dir(dir)
 
-        if target_crate is None:
-            crates_to_upgrade.append((None, [(crate, dep_name)]))
-        else:
-            crates_to_upgrade.append((target_crate, find_reverse_deps(target_crate)))
+    try:
+        done = False
+        while not done:
+            done = True
 
-    for crate, dep_list in crates_to_upgrade:
-        assert dep_list
-        dep_crate, dep_name = dep_list[0]
-        dep_spec = dep_crate.get_dep_spec(dep_name)
+            new_crates = []
+            for src in lock.crates():
+                for dep_name, dep_spec in src.dep_specs():
+                    if src.get_dep(dep_name) is not None:
+                        continue
 
-        for dep_crate, dep_name in dep_list[1:]:
-            dep_spec = join_dep_specs(dep_spec, dep_crate.get_dep_spec(dep_name))
+                    compat_crates = set(crate for crate in lock.crates() if crate.self_spec().join(dep_spec) is not None)
+                    if len(compat_crates) == 1:
+                        src.set_dep(dep_name, compat_crates.pop())
+                    elif len(compat_crates) > 1:
+                        errors.append((src, dep_name))
+                        continue
 
-        if crate is None:
-            if target_dir is None:
-                target_dir = lock.new_unique_crate_name(dep_spec)
-            new_crate = lock.init_crate(dep_spec, target_dir)
+                    for idx, (ds, dep_list) in enumerate(new_crates):
+                        new_spec = ds.join(dep_spec)
+                        if new_spec is not None:
+                            dep_list.append((src, dep_name))
+                            new_crates[idx] = new_spec, dep_list
+                            break
+                    else:
+                        new_crates.append((dep_spec, [(src, dep_name)]))
 
-            for dep_crate, dep_name in dep_list:
-                dep_crate.set_dep(dep_name, new_crate)
-        else:
-            crate.upgrade(dep_spec)
-
-    lock.save()
+            if new_crates:
+                if dir is None:
+                    lock.log.error('can\'t guess the dependency directory, use --dir')
+                    return 1
+                else:
+                    done = False
+                    for dep_spec, dep_list in new_crates:
+                        name = lock.new_unique_crate_name(dep_spec, dir)
+                        new_crate = lock.init_crate(dep_spec, name)
+                        for src, dep in dep_list:
+                            src.set_dep(dep, new_crate)
+    finally:
+        lock.save()
 
 def _list_deps(lock):
     r = []
@@ -264,6 +267,7 @@ def _main(argv, log):
         p.set_defaults(fn=_status)
 
     p = sp.add_parser('upgrade')
+    p.add_argument('--dir')
     p.add_argument('depid', nargs='?')
     p.add_argument('target_dir', nargs='?')
     p.set_defaults(fn=_upgrade)

@@ -46,6 +46,9 @@ class GitLock:
         log.check_call(['git', 'config', 'hooks.suppresscrater', 'true'], cwd=path)
         log.check_call(['git', '-c', 'advice.detachedHead=false', 'checkout', self._commit], cwd=path)
 
+    def make_dep_spec(self):
+        return GitDepSpec(self._url, ())
+
     @classmethod
     def status(cls, path, log):
         try:
@@ -64,7 +67,7 @@ class GitDepSpec:
         self.handler = GitCrate
 
         self._url = url
-        self._branches = branches
+        self._branches = frozenset(branches)
 
     def name_hint(self):
         hint = self._url.replace('\\', '/').rsplit('/', 1)[-1]
@@ -78,10 +81,10 @@ class GitDepSpec:
         log.check_call(['git', 'clone', self._url, path, '--no-checkout'])
 
         try:
-            log.check_call(['git', 'fetch', 'origin'] + self._branches, cwd=path)
+            log.check_call(['git', 'fetch', 'origin'] + list(self._branches), cwd=path)
 
             if len(self._branches) == 1:
-                merge_base = log.check_output(['git', 'rev-parse', '--quiet', '--verify', self._branches[0]], cwd=path).decode().strip()
+                merge_base = log.check_output(['git', 'rev-parse', '--quiet', '--verify', next(iter(self._branches))], cwd=path).decode().strip()
             else:
                 merge_base = log.check_output(['git', 'merge-base'] + ['origin/{}'.format(b) for b in self._branches], cwd=path).decode().strip()
 
@@ -95,8 +98,13 @@ class GitDepSpec:
             shutil.rmtree(path, onerror=readonly_handler)
             raise
 
-    def handler(self):
-        return GitCrate
+    def join(self, o):
+        if not isinstance(o, GitDepSpec) or self._url != o._url:
+            return None
+
+        new_branches = set(self._branches)
+        new_branches.update(o._branhces)
+        return GitDepSpec(self._url, new_branches)
 
 class GitCrate:
     @classmethod

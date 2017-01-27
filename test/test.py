@@ -323,5 +323,22 @@ class TestCrater(unittest.TestCase):
         self._crater_check_call(['status'])
         self.assertTrue(self._log.search_output(r'M*      :test_repo [^\n]+test_repo'))
 
+    def test_upgrade(self):
+        repo = self.ctx.make_repo(name='test_repo')
+        with open('DEPS', 'w') as fout:
+            json.dump({
+                'dependencies': {
+                        'test_repo': {
+                            'type': 'git',
+                            'url': repo.path,
+                            },
+                    }
+                }, fout)
+
+        self._crater_check_call(['upgrade'])
+
+        self._crater_check_call(['status'])
+        self.assertTrue(self._log.search_output(r'        :test_repo'))
+
 if __name__ == '__main__':
     unittest.main()
