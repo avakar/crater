@@ -1,5 +1,6 @@
 *.pyc
 .vs/
+dist/
 **.egg-info/
 **.sln
 **.pyproj
