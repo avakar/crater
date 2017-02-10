@@ -9,8 +9,7 @@ import six
 
 from .log import Log
 from .lockfile import parse_lockfile
-from .gitcrate import GitCrate, GitDepSpec
-from .tarcrate import TarCrate
+from .gitcrate import GitRemote, GitDepSpec
 from .gen import gen
 
 def _init(lock):
@@ -91,25 +90,28 @@ def _upgrade(lock, depid, target_dir, dir):
 
             new_crates = []
             for src in lock.crates():
-                for dep_name, dep_spec in src.dep_specs():
+                for dep_name, (remote, dep_spec) in src.dep_specs():
                     if src.get_dep(dep_name) is not None:
                         continue
 
-                    compat_crates = set(crate for crate in lock.crates() if crate.self_spec().join(dep_spec) is not None)
+                    compat_crates = set(crate for crate in lock.crates() if crate.remote() == remote)
                     if len(compat_crates) == 1:
                         src.set_dep(dep_name, compat_crates.pop())
                     elif len(compat_crates) > 1:
                         errors.append((src, dep_name))
                         continue
 
-                    for idx, (ds, dep_list) in enumerate(new_crates):
+                    for idx, (ds, rem, dep_list) in enumerate(new_crates):
+                        if rem != remote:
+                            continue
+
                         new_spec = ds.join(dep_spec)
                         if new_spec is not None:
                             dep_list.append((src, dep_name))
-                            new_crates[idx] = new_spec, dep_list
+                            new_crates[idx] = new_spec, rem, dep_list
                             break
                     else:
-                        new_crates.append((dep_spec, [(src, dep_name)]))
+                        new_crates.append((dep_spec, remote, [(src, dep_name)]))
 
             if new_crates:
                 if dir is None:
@@ -117,9 +119,9 @@ def _upgrade(lock, depid, target_dir, dir):
                     return 1
                 else:
                     done = False
-                    for dep_spec, dep_list in new_crates:
-                        name = lock.new_unique_crate_name(dep_spec, dir)
-                        new_crate = lock.init_crate(dep_spec, name)
+                    for dep_spec, rem, dep_list in new_crates:
+                        name = lock.new_unique_crate_name(rem, dir)
+                        new_crate = lock.init_crate(rem, dep_spec, name)
                         for src, dep in dep_list:
                             src.set_dep(dep, new_crate)
     finally:
@@ -164,15 +166,16 @@ def _remove(lock, target):
     lock.save()
 
 def _add_git_crate(lock, url, target, branch, quiet):
-    dep_spec = GitDepSpec(url, [branch or 'master'])
+    remote = GitRemote(url)
+    dep_spec = GitDepSpec([branch or 'master'])
 
     if target is None:
-        crate_name = lock.new_unique_crate_name(dep_spec)
+        crate_name = lock.new_unique_crate_name(remote)
         target = crate_name
     else:
         crate_name = lock.crate_name_from_path(target)
 
-    new_crate = lock.init_crate(dep_spec, crate_name)
+    new_crate = lock.init_crate(remote, dep_spec, crate_name)
 
     dep_name = os.path.split(target)[1]
     for crate in lock.crates():

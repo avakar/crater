@@ -1,32 +1,50 @@
 import os, errno, sys, six, shutil, stat
 
-class GitLock:
-    def __init__(self, url, commit, dirty=False):
-        self.dirty = dirty
+class GitRemote:
+    def __init__(self, url):
+        self.url = url
 
-        self._url = url
-        self._commit = commit
-
-    def save(self):
-        assert not self.dirty
-        return {
-            'type': 'git',
-            'commit': self._commit,
-            'url': self._url,
-            }
+    def name_hint(self):
+        hint = self.url.replace('\\', '/').rsplit('/', 1)[-1]
+        if hint.endswith('.git'):
+            hint = hint[:-4]
+        return hint
 
     def __eq__(self, rhs):
-        if not isinstance(rhs, GitLock):
+        if not isinstance(rhs, GitRemote):
             return False
-        return (self._url, self._commit) == (rhs._url, rhs._commit)
+        return self.url == rhs.url
 
-    def checkout(self, path, log):
+    def __hash__(self):
+        return hash(self.url)
+
+class GitVersion:
+    def __init__(self, hash):
+        self.hash = hash
+
+    def __eq__(self, rhs):
+        if not isinstance(rhs, GitVersion):
+            return False
+        return self.hash == rhs.hash
+
+    def __hash__(self):
+        return hash(self.hash)
+
+class GitHandler:
+    def save_lock(self, remote, ver):
+        return {
+            'type': 'git',
+            'url': remote.url,
+            'commit': ver.hash,
+            }
+
+    def checkout(self, remote, ver, path, log):
         _clean_env()
 
         log.write('Checking out {}...\n'.format(path))
 
         if os.path.isdir(os.path.join(path, '.git')):
-            r = log.call(['git', 'rev-parse', '--quiet', '--verify', '{}^{{commit}}'.format(self._commit)], stdout=None, cwd=path)
+            r = log.call(['git', 'rev-parse', '--quiet', '--verify', '{}^{{commit}}'.format(ver.hash)], stdout=None, cwd=path)
             if r != 0:
                 log.check_call(['git', 'fetch', 'origin'], cwd=path)
 
@@ -40,17 +58,13 @@ class GitLock:
                 if e.errno != errno.EEXIST:
                     raise
 
-            log.check_call(['git', 'clone', self._url, path, '--no-checkout'])
+            log.check_call(['git', 'clone', remote.url, path, '--no-checkout'])
 
         # XXX print('checkout {} to {}'.format(lock.commit, lock.path))
         log.check_call(['git', 'config', 'hooks.suppresscrater', 'true'], cwd=path)
-        log.check_call(['git', '-c', 'advice.detachedHead=false', 'checkout', self._commit], cwd=path)
+        log.check_call(['git', '-c', 'advice.detachedHead=false', 'checkout', ver.hash], cwd=path)
 
-    def make_dep_spec(self):
-        return GitDepSpec(self._url, ())
-
-    @classmethod
-    def status(cls, path, log):
+    def status(self, path, log):
         try:
             commit = log.check_output(['git', 'rev-parse', '--quiet', '--verify', 'HEAD'], cwd=path).decode().strip()
             origin = log.check_output(['git', 'config', '--get', 'remote.origin.url'], cwd=path).decode().strip()
@@ -60,25 +74,30 @@ class GitLock:
         except log.CalledProcessError as e:
             return None
 
-        return cls(origin, commit, dirty)
+        return GitVersion(commit), dirty
+
+    def load_lock(self, spec):
+        return GitRemote(spec['url']), GitVersion(spec['commit'])
+
+    def load_depspec(self, spec):
+        url = spec.get('repo') or spec['url']
+        branches = spec.get('branch', 'master')
+        if isinstance(branches, six.string_types):
+            branches = [branches]
+
+        return GitRemote(url), GitDepSpec(branches)
+
+    def empty_dep_spec(self):
+        return GitDepSpec(())
 
 class GitDepSpec:
-    def __init__(self, url, branches):
-        self.handler = GitCrate
-
-        self._url = url
+    def __init__(self, branches):
         self._branches = frozenset(branches)
 
-    def name_hint(self):
-        hint = self._url.replace('\\', '/').rsplit('/', 1)[-1]
-        if hint.endswith('.git'):
-            hint = hint[:-4]
-        return hint
-
-    def init(self, path, log):
+    def init(self, path, remote, log):
         assert self._branches
 
-        log.check_call(['git', 'clone', self._url, path, '--no-checkout'])
+        log.check_call(['git', 'clone', remote.url, path, '--no-checkout'])
 
         try:
             log.check_call(['git', 'fetch', 'origin'] + list(self._branches), cwd=path)
@@ -88,7 +107,7 @@ class GitDepSpec:
             else:
                 merge_base = log.check_output(['git', 'merge-base'] + ['origin/{}'.format(b) for b in self._branches], cwd=path).decode().strip()
 
-            return GitLock(self._url, merge_base)
+            return git_handler, GitVersion(merge_base)
         except:
             def readonly_handler(rm_func, path, exc_info):
                 if issubclass(exc_info[0], OSError) and exc_info[1].winerror == 5:
@@ -99,27 +118,14 @@ class GitDepSpec:
             raise
 
     def join(self, o):
-        if not isinstance(o, GitDepSpec) or self._url != o._url:
+        if not isinstance(o, GitDepSpec):
             return None
 
         new_branches = set(self._branches)
         new_branches.update(o._branhces)
-        return GitDepSpec(self._url, new_branches)
+        return GitDepSpec(new_branches)
 
-class GitCrate:
-    @classmethod
-    def load_lock(cls, spec):
-        return GitLock(spec['url'], spec['commit'])
-
-    @classmethod
-    def load_depspec(cls, spec):
-        url = spec.get('repo') or spec['url']
-        branches = spec.get('branch', 'master')
-        if isinstance(branches, six.string_types):
-            branches = [branches]
-
-        return GitDepSpec(url, branches)
-
+git_handler = GitHandler()
 
 def _clean_env():
     # This is a workaround. For whatever reason, git calls are not reentrant.
