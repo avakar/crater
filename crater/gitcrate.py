@@ -1,4 +1,5 @@
 import os, errno, sys, six, shutil, stat
+from .log import CalledProcessError
 
 class GitRemote:
     def __init__(self, url):
@@ -37,6 +38,21 @@ class GitHandler:
             'url': remote.url,
             'commit': ver.hash,
             }
+
+    def versions(self, path, dep_spec, log):
+        if len(dep_spec._branches) == 1:
+            merge_base = log.check_output(['git', 'rev-parse', '--quiet', '--verify', next(iter(dep_spec._branches))], cwd=path).decode().strip()
+        else:
+            merge_base = log.check_output(['git', 'merge-base'] + ['origin/{}'.format(b) for b in dep_spec._branches], cwd=path).decode().strip()
+
+        commits = log.check_output(['git', 'log', '--pretty=format:%H', merge_base], cwd=path).decode().strip().split()
+        return [GitVersion(hash) for hash in commits]
+
+    def get_deps_file(self, path, ver, log):
+        try:
+            return log.check_output(['git', 'show', '{}:DEPS'.format(ver.hash)], cwd=path).decode()
+        except CalledProcessError:
+            return '{}'
 
     def checkout(self, remote, ver, path, log):
         _clean_env()
@@ -116,6 +132,9 @@ class GitDepSpec:
                 raise exc_info[1]
             shutil.rmtree(path, onerror=readonly_handler)
             raise
+
+    def fetch(self, path, log):
+        log.check_call(['git', 'fetch', 'origin'], cwd=path)
 
     def join(self, o):
         if not isinstance(o, GitDepSpec):

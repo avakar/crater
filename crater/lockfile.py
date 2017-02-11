@@ -75,6 +75,12 @@ class Crate:
         self._deps = {}
         self._dep_specs = {}
 
+    def fetch(self):
+        self._handler.fetch(self.path, self._log)
+
+    def versions(self, dep_spec):
+        return self._handler.versions(self.path, dep_spec, self._log)
+
     def reload_deps(self):
         try:
             with open(os.path.join(self.path, 'DEPS'), 'r') as fin:
@@ -91,8 +97,25 @@ class Crate:
             handler = _crate_types[spec['type']]
             self._dep_specs[dep_name] = handler.load_depspec(spec)
 
-    def checkout(self):
-        self._handler.checkout(self._remote, self._version, self.path, self._log)
+    def current_version(self):
+        return self._version
+
+    def get_dep_specs(self, ver):
+        d = self._handler.get_deps_file(self.path, ver, self._log)
+        d = cson.loads(d)
+
+        r = {}
+        for dep_name, spec in six.iteritems(d.get('dependencies', {})):
+            handler = _crate_types[spec['type']]
+            r[dep_name] = handler.load_depspec(spec)
+
+        return r
+
+    def checkout(self, ver=None):
+        if ver is None:
+            ver = self._version
+        self._handler.checkout(self._remote, ver, self.path, self._log)
+        self._version = ver
 
     def update(self):
         new_ver, dirty = self._handler.status(self.path, self._log)

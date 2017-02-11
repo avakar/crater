@@ -59,8 +59,9 @@ class Git:
         subprocess.check_call(['git', 'init', '-q'], cwd=self.path)
         subprocess.check_call(['git', 'config', 'hooks.suppresscrater', 'true'], cwd=self.path)
 
-    def add(self, name):
-        open(os.path.join(self.path, name), 'w').close()
+    def add(self, name, content=''):
+        with open(os.path.join(self.path, name), 'w') as fout:
+            fout.write(content)
         self.add_existing(name)
 
     def add_existing(self, name):
@@ -339,6 +340,36 @@ class TestCrater(unittest.TestCase):
 
         self._crater_check_call(['status'])
         self.assertTrue(self._log.search_output(r'        :test_repo'))
+
+    def test_recursive_upgrade(self):
+        repo_b = self.ctx.make_repo(name='B')
+
+        repo_a = self.ctx.make_repo(name='A')
+        repo_a.add('DEPS', json.dumps({
+            'dependencies': {
+                'B': {
+                    'type': 'git',
+                    'url': repo_b.path,
+                    }
+                }
+            }))
+        repo_a.commit()
+
+        with open('DEPS', 'w') as fout:
+            json.dump({
+                'dependencies': {
+                        'A': {
+                            'type': 'git',
+                            'url': repo_a.path,
+                            },
+                    }
+                }, fout)
+
+        self._crater_check_call(['upgrade'])
+
+        self._crater_check_call(['status'])
+        self.assertTrue(self._log.search_output(r'        :A'))
+        self.assertTrue(self._log.search_output(r'        _deps/A:B'))
 
 if __name__ == '__main__':
     unittest.main()

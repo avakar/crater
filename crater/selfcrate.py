@@ -1,3 +1,5 @@
+import os
+
 class SelfDepSpec:
     def join(self, o):
         if not isinstance(o, SelfDepSpec):
@@ -19,6 +21,12 @@ class SelfVersion:
         return hash(None)
 
 class SelfHandler:
+    def fetch(self, path, log):
+        pass
+
+    def versions(self, path, dep_spec, log):
+        return [SelfVersion()]
+
     def checkout(self, remote, version, path, log):
         pass
 
@@ -27,6 +35,13 @@ class SelfHandler:
 
     def save(self):
         return {}
+
+    def get_deps_file(self, path, ver, log):
+        try:
+            with open(os.path.join(path, 'DEPS'), 'r') as fin:
+                return fin.read()
+        except IOError:
+            return '{}'
 
     def status(self, path, log):
         return SelfVersion(), False

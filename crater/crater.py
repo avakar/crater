@@ -79,53 +79,81 @@ def _status(lock):
 
 def _upgrade(lock, depid, target_dir, dir):
 
-    errors = []
-
     dir = lock.guess_deps_dir(dir)
 
-    try:
-        done = False
-        while not done:
-            done = True
+    remotes = {}
+    for crate in lock.crates():
+        remotes.setdefault(crate.remote(), set()).add(crate)
 
-            new_crates = []
-            for src in lock.crates():
-                for dep_name, (remote, dep_spec) in src.dep_specs():
-                    if src.get_dep(dep_name) is not None:
+    def make_crate(remote, dep_spec):
+        target = remotes.get(remote)
+        if target is None:
+            name = lock.new_unique_crate_name(remote, dir)
+            new_crate = lock.init_crate(remote, dep_spec, name)
+            remotes[remote] = new_crate
+            return new_crate
+        elif len(target) == 1:
+            cur_target = next(iter(target))
+            cur.set_dep(dep_name, cur_target)
+            return cut_target
+        else:
+            # Can't associate, skip this dep
+            # XXX write a warning to the log
+            return None
+
+    targets = {}
+
+    def lock_one(unlocked, locked):
+        if not unlocked:
+            return locked
+
+        locked = dict(locked)
+        unlocked = dict(unlocked)
+
+        c = next(iter(unlocked))
+        dep_spec = unlocked[c]
+        del unlocked[c]
+
+        for ver in c.versions(dep_spec):
+            locked[c] = ver
+
+            new_dep_specs = c.get_dep_specs(ver)
+            for dep_name, (remote, ds) in six.iteritems(new_dep_specs):
+                tgt = c.get_dep(dep_name)
+                if tgt is None:
+                    tgt = make_crate(remote, ds)
+                    if tgt is None:
+                        # Can't associate, skip this dep
+                        # XXX write a warning to the log
                         continue
 
-                    compat_crates = set(crate for crate in lock.crates() if crate.remote() == remote)
-                    if len(compat_crates) == 1:
-                        src.set_dep(dep_name, compat_crates.pop())
-                    elif len(compat_crates) > 1:
-                        errors.append((src, dep_name))
-                        continue
-
-                    for idx, (ds, rem, dep_list) in enumerate(new_crates):
-                        if rem != remote:
-                            continue
-
-                        new_spec = ds.join(dep_spec)
-                        if new_spec is not None:
-                            dep_list.append((src, dep_name))
-                            new_crates[idx] = new_spec, rem, dep_list
-                            break
-                    else:
-                        new_crates.append((dep_spec, remote, [(src, dep_name)]))
-
-            if new_crates:
-                if dir is None:
-                    lock.log.error('can\'t guess the dependency directory, use --dir')
-                    return 1
+                targets[c, dep_name] = tgt
+                if tgt in locked:
+                    if not ds.is_compatible_with(locked[tgt]):
+                        return
+                elif tgt in unlocked:
+                    ds = unlocked[tgt].join(ds)
+                    if ds is None:
+                        return
+                    unlocked[tgt] = ds
                 else:
-                    done = False
-                    for dep_spec, rem, dep_list in new_crates:
-                        name = lock.new_unique_crate_name(rem, dir)
-                        new_crate = lock.init_crate(rem, dep_spec, name)
-                        for src, dep in dep_list:
-                            src.set_dep(dep, new_crate)
-    finally:
-        lock.save()
+                    unlocked[tgt] = ds
+
+            r = lock_one(unlocked, locked)
+            if r is not None:
+                return r
+
+    self_crate = lock.get_crate('')
+    unlocked_crates = { self_crate : self_crate.empty_dep_spec() }
+    r = lock_one(unlocked_crates, locked={})
+
+    for (c, dep_name), tgt in six.iteritems(targets):
+        c.set_dep(dep_name, tgt)
+
+    for c, ver in six.iteritems(r):
+        c.checkout(ver)
+
+    lock.save()
 
 def _list_deps(lock):
     r = []
