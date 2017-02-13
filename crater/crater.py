@@ -204,6 +204,7 @@ def _add_git_crate(lock, url, target, branch, quiet):
         crate_name = lock.crate_name_from_path(target)
 
     new_crate = lock.init_crate(remote, dep_spec, crate_name)
+    new_crate.checkout()
 
     dep_name = os.path.split(target)[1]
     for crate in lock.crates():

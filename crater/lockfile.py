@@ -236,8 +236,6 @@ class _LockFile:
 
         crate = Crate(self._root, crate_name, handler, remote, ver, self.log)
         self.add(crate)
-
-        handler.checkout(remote, ver, crate.path, self.log)
         return crate
 
     def add(self, crate):

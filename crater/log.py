@@ -39,12 +39,14 @@ class Log:
 
         p = subprocess.Popen(*args, **kw)
 
+        src = getattr(p, src)
+
         while True:
-            line = getattr(p, src).readline()
+            line = src.readline()
             if not line:
                 break
 
-            self._dimmed.write(line)
+            self._dimmed.write(line.decode())
 
         p.wait()
         return p.returncode
@@ -69,12 +71,16 @@ class Log:
         thr = threading.Thread(target=reader)
         thr.start()
 
+        line = []
         while True:
-            line = p.stderr.readline()
-            if not line:
+            line.append(p.stderr.read(1))
+            if not line[-1]:
+                self._dimmed.write(b''.join(line[:-1]).decode())
                 break
 
-            self._dimmed.write(line)
+            if line[-1] in b'\r\n':
+                self._dimmed.write(b''.join(line).decode())
+                line = []
 
         thr.join()
 
@@ -82,7 +88,7 @@ class Log:
         if p.returncode != 0:
             raise subprocess.CalledProcessError(p.returncode, args[0])
 
-        return ''.join(stdout)
+        return stdout[0]
 
     def write(self, s):
         self._stderr.write(s)

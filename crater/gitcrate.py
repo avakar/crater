@@ -41,7 +41,7 @@ class GitHandler:
 
     def versions(self, path, dep_spec, log):
         if len(dep_spec._branches) == 1:
-            merge_base = log.check_output(['git', 'rev-parse', '--quiet', '--verify', next(iter(dep_spec._branches))], cwd=path).decode().strip()
+            merge_base = log.check_output(['git', 'rev-parse', '--quiet', '--verify', 'origin/{}'.format(next(iter(dep_spec._branches)))], cwd=path).decode().strip()
         else:
             merge_base = log.check_output(['git', 'merge-base'] + ['origin/{}'.format(b) for b in dep_spec._branches], cwd=path).decode().strip()
 
@@ -49,9 +49,10 @@ class GitHandler:
         return [GitVersion(hash) for hash in commits]
 
     def get_deps_file(self, path, ver, log):
-        try:
+        root_tree = log.check_output(['git', 'ls-tree', '--name-only', ver.hash], cwd=path).decode().split()
+        if 'DEPS' in root_tree:
             return log.check_output(['git', 'show', '{}:DEPS'.format(ver.hash)], cwd=path).decode()
-        except CalledProcessError:
+        else:
             return '{}'
 
     def checkout(self, remote, ver, path, log):
@@ -119,7 +120,7 @@ class GitDepSpec:
             log.check_call(['git', 'fetch', 'origin'] + list(self._branches), cwd=path)
 
             if len(self._branches) == 1:
-                merge_base = log.check_output(['git', 'rev-parse', '--quiet', '--verify', next(iter(self._branches))], cwd=path).decode().strip()
+                merge_base = log.check_output(['git', 'rev-parse', '--quiet', '--verify', 'origin/{}'.format(next(iter(self._branches)))], cwd=path).decode().strip()
             else:
                 merge_base = log.check_output(['git', 'merge-base'] + ['origin/{}'.format(b) for b in self._branches], cwd=path).decode().strip()
 
