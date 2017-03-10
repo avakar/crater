@@ -129,7 +129,7 @@ def _upgrade(lock, depid, target_dir, dir):
 
                 targets[c, dep_name] = tgt
                 if tgt in locked:
-                    if not ds.is_compatible_with(locked[tgt]):
+                    if not tgt.is_compatible_ver(locked[tgt], ds):
                         return
                 elif tgt in unlocked:
                     ds = unlocked[tgt].join(ds)

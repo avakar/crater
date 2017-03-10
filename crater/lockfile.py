@@ -111,6 +111,9 @@ class Crate:
 
         return r
 
+    def is_compatible_ver(self, ver, ds):
+        return self._handler.is_compatible_ver(self.path, self._log, ver, ds)
+
     def checkout(self, ver=None):
         if ver is None:
             ver = self._version

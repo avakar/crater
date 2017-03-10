@@ -107,6 +107,9 @@ class GitHandler:
     def empty_dep_spec(self):
         return GitDepSpec(())
 
+    def is_compatible_ver(self, path, log, ver, ds):
+        return log.check_output(['git', 'merge-base', ver.hash] + list(ds._branches), cwd=path).decode().strip() == ver.hash
+
 class GitDepSpec:
     def __init__(self, branches):
         self._branches = frozenset(branches)
@@ -142,7 +145,7 @@ class GitDepSpec:
             return None
 
         new_branches = set(self._branches)
-        new_branches.update(o._branhces)
+        new_branches.update(o._branches)
         return GitDepSpec(new_branches)
 
 git_handler = GitHandler()
