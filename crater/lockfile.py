@@ -111,6 +111,9 @@ class Crate:
 
         return r
 
+    def is_self_crate(self):
+        return self._handler == self_handler
+
     def is_compatible_ver(self, ver, ds):
         return self._handler.is_compatible_ver(self.path, self._log, ver, ds)
 

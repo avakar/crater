@@ -29,7 +29,7 @@ def _checkout(lock):
         for dep, target in crate.deps():
             mapping[dep] = os.path.abspath(target.path)
 
-        gen(crate.path, mapping, crate._gen)
+    gen(lock)
     return 0
 
 def _commit(lock):
