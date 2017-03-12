@@ -17,7 +17,7 @@ def gen_msbuild(path, mapping, g):
 
     content = templ.format(deps=''.join(deps))
     with open(os.path.join(path, file), 'wb') as fout:
-        fout.write(content)
+        fout.write(content.encode())
 
 def gen_cmake(mapping, g):
     prefix = g.get('prop_prefix', 'dep_')
@@ -37,7 +37,10 @@ def topo_sort_crates(lock):
         deps = set(tgt for name, tgt in crate.deps())
         spec[crate] = deps
 
-    return toposort.toposort_flatten(spec)
+    r = []
+    for chunk in toposort.toposort(spec):
+        r.extend(chunk)
+    return r
 
 def gen(lock):
     for crate in lock.crates():
@@ -76,4 +79,5 @@ def gen(lock):
 
         if content:
             with open(os.path.join(crate.path, g.get('file', 'deps.cmake')), 'wb') as fout:
-                fout.write(''.join(content))
+                content = ''.join(content)
+                fout.write(content.encode())
