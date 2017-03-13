@@ -71,7 +71,7 @@ class Crate:
         self._remote = remote
         self._version = ver
         self._root = root
-        self._gen = {}
+        self._gen = None
         self._deps = {}
         self._dep_specs = {}
 
@@ -80,6 +80,11 @@ class Crate:
 
     def versions(self, dep_spec):
         return self._handler.versions(self.path, dep_spec, self._log)
+
+    def gen_stmts(self):
+        if self._gen is None:
+            self.reload_deps()
+        return self._gen
 
     def reload_deps(self):
         try:

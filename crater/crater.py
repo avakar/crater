@@ -32,6 +32,10 @@ def _checkout(lock):
     gen(lock)
     return 0
 
+def _gen(lock):
+    gen(lock)
+    return 0
+
 def _commit(lock):
     for crate in lock.crates():
         crate.update()
@@ -85,23 +89,9 @@ def _upgrade(lock, depid, target_dir, dir):
     for crate in lock.crates():
         remotes.setdefault(crate.remote(), set()).add(crate)
 
-    def make_crate(remote, dep_spec):
-        target = remotes.get(remote)
-        if target is None:
-            name = lock.new_unique_crate_name(remote, dir)
-            new_crate = lock.init_crate(remote, dep_spec, name)
-            remotes[remote] = new_crate
-            return new_crate
-        elif len(target) == 1:
-            cur_target = next(iter(target))
-            cur.set_dep(dep_name, cur_target)
-            return cut_target
-        else:
-            # Can't associate, skip this dep
-            # XXX write a warning to the log
-            return None
-
     targets = {}
+
+    fetched_crates = set()
 
     def lock_one(unlocked, locked):
         if not unlocked:
@@ -121,11 +111,22 @@ def _upgrade(lock, depid, target_dir, dir):
             for dep_name, (remote, ds) in six.iteritems(new_dep_specs):
                 tgt = c.get_dep(dep_name)
                 if tgt is None:
-                    tgt = make_crate(remote, ds)
+                    tgt = remotes.get(remote)
                     if tgt is None:
+                        name = lock.new_unique_crate_name(remote, dir)
+                        tgt = lock.init_crate(remote, ds, name)
+                        remotes[remote] = tgt
+                    elif len(tgt) == 1:
+                        tgt = next(iter(tgt))
+                        c.set_dep(dep_name, tgt)
+                    else:
                         # Can't associate, skip this dep
                         # XXX write a warning to the log
                         continue
+                else:
+                    if tgt not in fetched_crates:
+                        fetched_crates.add(tgt)
+                        tgt.fetch()
 
                 targets[c, dep_name] = tgt
                 if tgt in locked:
@@ -154,6 +155,8 @@ def _upgrade(lock, depid, target_dir, dir):
         c.checkout(ver)
 
     lock.save()
+
+    gen(lock)
 
 def _list_deps(lock):
     r = []
@@ -185,6 +188,7 @@ def _assign(lock, dep, crate, force):
 
     crate.set_dep(dname, target_crate)
     lock.save()
+    gen(lock)
     return 0
 
 def _remove(lock, target):
@@ -192,6 +196,7 @@ def _remove(lock, target):
 
     lock.remove(crate)
     lock.save()
+    gen(lock)
 
 def _add_git_crate(lock, url, target, branch, quiet):
     remote = GitRemote(url)
@@ -212,6 +217,7 @@ def _add_git_crate(lock, url, target, branch, quiet):
             crate.set_dep(dep_name, new_crate)
 
     lock.save()
+    gen(lock)
     return 0
 
 def _add_tar_crate(lock, url, target, subdir, exclude):
@@ -226,6 +232,7 @@ def _add_tar_crate(lock, url, target, subdir, exclude):
     new_crate.checkout()
     lock.add(new_crate)
     lock.save()
+    gen(lock)
     return 0
 
 def find_root(dir):
@@ -303,6 +310,9 @@ def _main(argv, log):
     p.add_argument('depid', nargs='?')
     p.add_argument('target_dir', nargs='?')
     p.set_defaults(fn=_upgrade)
+
+    p = sp.add_parser('gen')
+    p.set_defaults(fn=_gen)
 
     args = ap.parse_args(argv)
 

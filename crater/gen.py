@@ -44,7 +44,7 @@ def topo_sort_crates(lock):
 
 def gen(lock):
     for crate in lock.crates():
-        g = crate._gen
+        g = crate.gen_stmts()
         d = g.get('msbuild')
         if d is None:
             continue
@@ -56,7 +56,7 @@ def gen(lock):
         gen_msbuild(crate.path, mapping, d)
 
     for crate in lock.crates():
-        g = crate._gen
+        g = crate.gen_stmts()
 
         if not g and crate.dep_specs():
             g = { 'cmake': {} }

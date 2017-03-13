@@ -81,6 +81,9 @@ class GitHandler:
         log.check_call(['git', 'config', 'hooks.suppresscrater', 'true'], cwd=path)
         log.check_call(['git', '-c', 'advice.detachedHead=false', 'checkout', ver.hash], cwd=path)
 
+    def fetch(self, path, log):
+        log.check_call(['git', 'fetch', 'origin'], cwd=path)
+
     def status(self, path, log):
         try:
             commit = log.check_output(['git', 'rev-parse', '--quiet', '--verify', 'HEAD'], cwd=path).decode().strip()
@@ -136,9 +139,6 @@ class GitDepSpec:
                 raise exc_info[1]
             shutil.rmtree(path, onerror=readonly_handler)
             raise
-
-    def fetch(self, path, log):
-        log.check_call(['git', 'fetch', 'origin'], cwd=path)
 
     def join(self, o):
         if not isinstance(o, GitDepSpec):
