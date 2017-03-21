@@ -5,7 +5,7 @@ from setuptools import setup
 
 setup(
     name='crater',
-    version='0.4',
+    version='0.5',
 
     description='A dependency management system',
     author='Martin Vejnár',
