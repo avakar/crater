@@ -115,7 +115,9 @@ def _upgrade(lock, depid, target_dir, dir):
                     if tgt is None:
                         name = lock.new_unique_crate_name(remote, dir)
                         tgt = lock.init_crate(remote, ds, name)
-                        remotes[remote] = tgt
+                        c.set_dep(dep_name, tgt)
+                        lock.save()
+                        remotes.setdefault(remote, set()).add(tgt)
                     elif len(tgt) == 1:
                         tgt = next(iter(tgt))
                         c.set_dep(dep_name, tgt)
