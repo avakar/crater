@@ -58,9 +58,6 @@ def gen(lock):
     for crate in lock.crates():
         g = crate.gen_stmts()
 
-        if not g and crate.dep_specs():
-            g = { 'cmake': {} }
-
         d = g.get('cmake')
         if d is None:
             continue

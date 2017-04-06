@@ -94,8 +94,13 @@ class Crate:
             if e.errno != errno.ENOENT:
                 raise
             d = {}
-
-        self._gen = d.get('gen', {})
+            self._gen = {}
+        else:
+            gen = d.get('gen')
+            if gen is None:
+                self._gen = { 'cmake': {} }
+            else:
+                self._gen = gen
 
         self._dep_specs = {}
         for dep_name, spec in six.iteritems(d.get('dependencies', {})):
