@@ -48,9 +48,15 @@ def _commit(lock, force):
     return 0
 
 def _status(lock):
-    r = []
+    for crate in lock.crates():
+        if crate.is_self_crate():
+            continue
+        print('{} {}'.format(crate.status(), crate.name))
 
-    stati = {}
+    return 0
+
+def _deps(lock):
+    r = []
 
     for crate in lock.crates():
         assigned = set()
@@ -58,30 +64,27 @@ def _status(lock):
         for dep_name, target in crate.deps():
             assigned.add(dep_name)
 
-            if target not in stati:
-                stati[target] = target.status()
-
             full_name = '{}:{}'.format(crate.name, dep_name)
-            r.append((full_name, stati[target], os.path.relpath(target.path)))
+            r.append((full_name, os.path.relpath(target.path)))
 
         for dep_name in (name for name, spec in crate.dep_specs() if name not in assigned):
             full_name = '{}:{}'.format(crate.name, dep_name)
-            r.append((full_name, 'U ', ''))
+            r.append((full_name, ''))
 
     if not r:
         return 0
 
-    r.sort(key=lambda r: (r[2], r[1]))
+    r.sort(key=lambda r: r[1])
 
-    max_name_len = max(len(name) for name, status, target in r)
-    templ = '{{}}      {{:<{}s}}'.format(max_name_len)
+    max_name_len = max(len(name) for name, target in r)
+    templ = '{{:<{}s}}'.format(max_name_len)
 
     last_target = ''
-    for name, status, target in r:
+    for name, target in r:
         if target == last_target:
-            lock.log.write(templ.format(status, name) + '\n')
+            lock.log.write(templ.format(name) + '\n')
         else:
-            lock.log.write(templ.format(status, name) + '    {}\n'.format(target))
+            lock.log.write(templ.format(name) + '    {}\n'.format(target))
             last_target = target
 
     return 0
@@ -290,6 +293,9 @@ def _main(argv, log):
     for cmd in ('st', 'status'):
         p = sp.add_parser(cmd)
         p.set_defaults(fn=_status)
+
+    p = sp.add_parser('deps')
+    p.set_defaults(fn=_deps)
 
     p = sp.add_parser('upgrade')
     p.add_argument('--dir')
