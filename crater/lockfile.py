@@ -134,7 +134,7 @@ class Crate:
         self._version = ver
 
     def update(self):
-        new_ver, dirty = self._handler.status(self.path, self._log)
+        new_ver = self._handler.current_version(self.path, self._log)
         if new_ver is None:
             raise RuntimeError('the crate is corrupted somehow: {}'.format(self.path))
         self._version = new_ver
@@ -162,11 +162,15 @@ class Crate:
             raise RuntimeError('invalid name for a dependency'.format(':'))
         self._deps[name] = target_crate
 
+    def is_dirty(self):
+        return self._handler.is_dirty(self.path, self._log)
+
     def status(self):
         if not os.path.isdir(self.path):
             return 'D '
 
-        new_ver, dirty = self._handler.status(self.path, self._log)
+        new_ver = self._handler.current_version(self.path, self._log)
+        dirty = self._handler.is_dirty(self.path, self._log)
         if new_ver is None:
             return '! '
 

@@ -36,9 +36,14 @@ def _gen(lock):
     gen(lock)
     return 0
 
-def _commit(lock):
+def _commit(lock, force):
     for crate in lock.crates():
+        if not force and crate.is_dirty():
+            lock.log.error('crate {} has uncommitted changes (use "crater commit --force" and then "git commit --no-verify" to override)'.format(crate.name))
+            return 1
+
         crate.update()
+
     lock.save()
     return 0
 
@@ -222,21 +227,6 @@ def _add_git_crate(lock, url, target, branch, quiet):
     gen(lock)
     return 0
 
-def _add_tar_crate(lock, url, target, subdir, exclude):
-    if target is None:
-        target = url.replace('\\', '/').rsplit('/', 1)[-1]
-        target = target.split('.', 1)[0]
-        target = os.path.join(lock.root(), '_deps', target)
-
-    crate_path = os.path.relpath(target, lock.root()).replace('\\', '/')
-
-    new_crate = TarCrate(lock.root(), crate_path, hash=None, url=url, subdir=subdir, exclude=exclude)
-    new_crate.checkout()
-    lock.add(new_crate)
-    lock.save()
-    gen(lock)
-    return 0
-
 def find_root(dir):
     # The root directory is the one containing the .deps.lock file.
     # If not explicitly specified by --root, try to locate search for
@@ -273,6 +263,7 @@ def _main(argv, log):
 
     for cmd in ('commit', 'ci'):
         p = sp.add_parser(cmd)
+        p.add_argument('-f', '--force', action='store_true')
         p.set_defaults(fn=_commit)
 
     p = sp.add_parser('add-git')
@@ -281,13 +272,6 @@ def _main(argv, log):
     p.add_argument('url')
     p.add_argument('target', nargs='?')
     p.set_defaults(fn=_add_git_crate)
-
-    p = sp.add_parser('add-tar')
-    p.add_argument('--subdir')
-    p.add_argument('--exclude', '-X', action="append")
-    p.add_argument('url')
-    p.add_argument('target', nargs='?')
-    p.set_defaults(fn=_add_tar_crate)
 
     for cmd in ('rm', 'remove'):
         p = sp.add_parser(cmd)

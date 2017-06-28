@@ -43,8 +43,11 @@ class SelfHandler:
         except IOError:
             return '{}'
 
-    def status(self, path, log):
-        return SelfVersion(), False
+    def current_version(self, path, log):
+        return SelfVersion()
+
+    def is_dirty(self, path, log):
+        return False
 
     def load_lock(self, spec):
         return SelfRemote(), SelfVersion()

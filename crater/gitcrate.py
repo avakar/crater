@@ -84,17 +84,20 @@ class GitHandler:
     def fetch(self, path, log):
         log.check_call(['git', 'fetch', 'origin'], cwd=path)
 
-    def status(self, path, log):
+    def current_version(self, path, log):
         try:
             commit = log.check_output(['git', 'rev-parse', '--quiet', '--verify', 'HEAD'], cwd=path).decode().strip()
-            origin = log.check_output(['git', 'config', '--get', 'remote.origin.url'], cwd=path).decode().strip()
-
-            log.check_call(['git', 'update-index', '-q', '--refresh'], cwd=path)
-            dirty = log.call(['git', 'diff-index', '--quiet', 'HEAD', '--'], cwd=path) != 0
         except log.CalledProcessError as e:
             return None
 
-        return GitVersion(commit), dirty
+        return GitVersion(commit)
+
+    def is_dirty(self, path, log):
+        try:
+            log.check_call(['git', 'update-index', '-q', '--refresh'], cwd=path)
+            return log.call(['git', 'diff-index', '--quiet', 'HEAD', '--'], cwd=path) != 0
+        except log.CalledProcessError as e:
+            return True
 
     def load_lock(self, spec):
         return GitRemote(spec['url']), GitVersion(spec['commit'])
