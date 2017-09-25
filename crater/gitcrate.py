@@ -32,6 +32,12 @@ class GitVersion:
         return hash(self.hash)
 
 class GitHandler:
+    def __init__(self):
+        # This is a workaround. For whatever reason, git calls are not reentrant.
+        for key in list(os.environ):
+            if key.startswith('GIT_') and key != 'GIT_SSH':
+                del os.environ[key]
+
     def save_lock(self, remote, ver):
         return {
             'type': 'git',
@@ -56,8 +62,6 @@ class GitHandler:
             return '{}'
 
     def checkout(self, remote, ver, path, log):
-        _clean_env()
-
         log.write('Checking out {}...\n'.format(path))
 
         if os.path.isdir(os.path.join(path, '.git')):
@@ -152,10 +156,3 @@ class GitDepSpec:
         return GitDepSpec(new_branches)
 
 git_handler = GitHandler()
-
-def _clean_env():
-    # This is a workaround. For whatever reason, git calls are not reentrant.
-    for key in list(os.environ):
-        if key.startswith('GIT_') and key != 'GIT_SSH':
-            os.unsetenv(key)
-            del os.environ[key]
